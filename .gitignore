@@ -1,0 +1,28 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+ui/node_modules/
+
+# Build output
+ui/dist/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs and runtime artifacts
+*.log
+/tmp/
+
+# Local data volumes and generated data
+data/

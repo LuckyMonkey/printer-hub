@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  printer-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: printer-hub
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "8088:80"
+      - "8631:631"
+    environment:
+      TZ: America/New_York
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_NAME: printerhub
+      DB_USER: printerhub
+      DB_PASSWORD: printerhub
+      PRINTER_BROTHER_QUEUE: brother_ql820nwb
+      PRINTER_ZEBRA_QUEUE: zebra_zp505
+      PRINTER_HP_QUEUE: hp_envy_5055
+      GAPPS_WEBHOOK_URL: "${GAPPS_WEBHOOK_URL:-}"
+      SITE_LAT: ""
+      SITE_LON: ""
+    devices:
+      - "/dev/bus/usb:/dev/bus/usb"
+    volumes:
+      - cups_etc:/etc/cups
+      - cups_spool:/var/spool/cups
+      - cups_logs:/var/log/cups
+      - printer_data:/var/lib/printer-hub
+      - pg_data:/var/lib/postgresql
+
+volumes:
+  cups_etc:
+  cups_spool:
+  cups_logs:
+  printer_data:
+  pg_data:
