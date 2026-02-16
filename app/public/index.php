@@ -7,6 +7,7 @@ use PrinterHub\BatchPrintService;
 use PrinterHub\CommandRunner;
 use PrinterHub\CupsTransport;
 use PrinterHub\Database;
+use PrinterHub\HpBatchPdfService;
 use PrinterHub\HpLabelService;
 use PrinterHub\JobLogger;
 use PrinterHub\JobService;
@@ -43,6 +44,7 @@ require_once __DIR__ . '/../src/CupsTransport.php';
 require_once __DIR__ . '/../src/ZebraLabelService.php';
 require_once __DIR__ . '/../src/BrotherTemplateClient.php';
 require_once __DIR__ . '/../src/HpLabelService.php';
+require_once __DIR__ . '/../src/HpBatchPdfService.php';
 require_once __DIR__ . '/../src/MultiPrinterPrintService.php';
 require_once __DIR__ . '/../src/ZplRasterService.php';
 require_once __DIR__ . '/../src/PrintWorkflowService.php';
@@ -69,26 +71,43 @@ if (str_starts_with($path, '/api/')) {
     $batches = new BatchRepository($database);
     $registry = new PrinterRegistry();
     $logger = new JobLogger($registry->logPath());
+    $socketTransport = new RawSocketTransport();
+    $cupsTransport = new CupsTransport($commands);
+    $zebraService = new ZebraLabelService();
+    $brotherService = new BrotherTemplateClient();
+    $hpService = new HpLabelService();
+    $hpBatchPdf = new HpBatchPdfService($commands);
+    $sheetsBackup = new SheetsBackupService(getenv('GAPPS_WEBHOOK_URL') ?: null);
     $multiPrint = new MultiPrinterPrintService(
         registry: $registry,
         jobs: new PrintJobRepository($database),
         logger: $logger,
-        socketTransport: new RawSocketTransport(),
-        cupsTransport: new CupsTransport($commands),
-        zebra: new ZebraLabelService(),
-        brother: new BrotherTemplateClient(),
-        hp: new HpLabelService()
+        socketTransport: $socketTransport,
+        cupsTransport: $cupsTransport,
+        zebra: $zebraService,
+        brother: $brotherService,
+        hp: $hpService
     );
 
     $workflow = new PrintWorkflowService(
         $commands,
         $batches,
-        new SheetsBackupService(getenv('GAPPS_WEBHOOK_URL') ?: null),
+        $sheetsBackup,
         new ZplRasterService()
     );
     $seriesRepo = new SeriesBarcodeRepository($database);
     $seriesPrint = new SeriesPrintService($multiPrint, $seriesRepo, $logger);
-    $batchPrint = new BatchPrintService($multiPrint, $batches, $logger);
+    $batchPrint = new BatchPrintService(
+        $multiPrint,
+        $batches,
+        $logger,
+        $sheetsBackup,
+        $registry,
+        $cupsTransport,
+        $socketTransport,
+        $zebraService,
+        $hpBatchPdf
+    );
 
     $controller = new ApiController(
         new PrinterService($commands),

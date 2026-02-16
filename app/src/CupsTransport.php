@@ -58,6 +58,41 @@ final class CupsTransport
         ];
     }
 
+    /** @return array{jobOutput:string,queue:string,mode:string,file:string} */
+    public function sendFile(string $queue, string $file, string $title, int $copies, bool $raw = false): array
+    {
+        $this->ensureQueueExists($queue);
+
+        $path = trim($file);
+        if ($path === '' || !is_file($path)) {
+            throw new RuntimeException(sprintf('Print file does not exist: %s', $file));
+        }
+
+        $command = [
+            'sudo',
+            'lp',
+            '-d', $queue,
+            '-t', $title,
+            '-n', (string) $copies,
+        ];
+
+        if ($raw) {
+            $command[] = '-o';
+            $command[] = 'raw';
+        }
+
+        $command[] = $path;
+
+        $out = $this->commands->mustRun($command);
+
+        return [
+            'jobOutput' => $out,
+            'queue' => $queue,
+            'mode' => $raw ? 'raw' : 'normal',
+            'file' => $path,
+        ];
+    }
+
     private function writeTempFile(string $prefix, string $suffix, string $contents): string
     {
         $tmpDir = '/tmp/printer-hub';

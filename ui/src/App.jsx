@@ -189,6 +189,7 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
   const defaultLabelType = printer.labelTypes[0]?.id || 'waco-id';
   const defaultBarcodeType = printer.capabilities?.barcodeTypes?.[0] || 'CODE128';
   const hasQueue = queueConnected(printer, cupsQueues);
+  const singleModeEnabled = printer.printerId === 'brother-ql820';
 
   const [form, setForm] = useState({
     labelType: defaultLabelType,
@@ -201,6 +202,11 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
   const [message, setMessage] = useState('Ready.');
   const [job, setJob] = useState(null);
   const [printing, setPrinting] = useState(false);
+  const [batchInput, setBatchInput] = useState('');
+  const [batchType, setBatchType] = useState(defaultBarcodeType);
+  const [batchMessage, setBatchMessage] = useState('Batch ready.');
+  const [batchPrinting, setBatchPrinting] = useState(false);
+  const [batchSummary, setBatchSummary] = useState(null);
 
   useEffect(() => {
     setForm({
@@ -212,6 +218,10 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
     });
     setMessage('Ready.');
     setJob(null);
+    setBatchInput('');
+    setBatchType(defaultBarcodeType);
+    setBatchMessage('Batch ready.');
+    setBatchSummary(null);
   }, [printer.printerId, defaultLabelType, defaultBarcodeType]);
 
   async function pollJob(jobId) {
@@ -310,6 +320,45 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
     await submitCurrent(sample);
   }
 
+  async function submitBatch(event) {
+    event.preventDefault();
+
+    const raw = batchInput.trim();
+    if (!raw) {
+      setBatchMessage('Batch barcode data is required.');
+      return;
+    }
+
+    const values = raw.split(/[\r\n,]+/).map((v) => v.trim()).filter(Boolean);
+    if (values.length < 1 || values.length > 120) {
+      setBatchMessage('Batch must contain 1 to 120 barcode values.');
+      return;
+    }
+
+    setBatchPrinting(true);
+    setBatchMessage('Saving and printing batch...');
+    setBatchSummary(null);
+
+    try {
+      const res = await api('/api/batches/save-print-early', {
+        method: 'POST',
+        body: JSON.stringify({
+          printerId: printer.printerId,
+          labelType: form.labelType,
+          barcodeType: batchType,
+          input: raw,
+        }),
+      });
+
+      setBatchSummary(res);
+      setBatchMessage(`Batch ${res.batchId} saved. Sent: ${res.sentCount}, Errors: ${res.errorCount}.`);
+    } catch (err) {
+      setBatchMessage(err.message);
+    } finally {
+      setBatchPrinting(false);
+    }
+  }
+
   const statusText = useMemo(() => formatStatus(job?.status || ''), [job]);
   const statusFrame = useMemo(() => {
     if (job?.status === 'error') {
@@ -346,91 +395,155 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
             : `Connection unavailable: socket host "${printer.host || 'unset'}:${printer.port || 9100}"`)}
       </p>
 
-      <form className="mt-8 grid gap-7 md:grid-cols-2" onSubmit={onSubmit}>
-        <div>
-          <label className={LABEL_CLASS}>Label Type</label>
-          <select
-            className={INPUT_CLASS}
-            value={form.labelType}
-            onChange={(e) => setForm((prev) => ({ ...prev, labelType: e.target.value }))}
-          >
-            {printer.labelTypes.map((item) => (
-              <option key={item.id} value={item.id}>{item.label} ({item.id})</option>
-            ))}
-          </select>
+      {singleModeEnabled ? (
+        <>
+          <form className="mt-8 grid gap-7 md:grid-cols-2" onSubmit={onSubmit}>
+            <div>
+              <label className={LABEL_CLASS}>Label Type</label>
+              <select
+                className={INPUT_CLASS}
+                value={form.labelType}
+                onChange={(e) => setForm((prev) => ({ ...prev, labelType: e.target.value }))}
+              >
+                {printer.labelTypes.map((item) => (
+                  <option key={item.id} value={item.id}>{item.label} ({item.id})</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={LABEL_CLASS}>Barcode Type</label>
+              <select
+                className={INPUT_CLASS}
+                value={form.barcodeType}
+                onChange={(e) => setForm((prev) => ({ ...prev, barcodeType: e.target.value }))}
+              >
+                {printer.capabilities.barcodeTypes.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={`${LABEL_CLASS} flex items-center gap-2`}>
+                <SpriteIcon frame={SPRITE_FRAME.scanner} label="Barcode scanner" className="scale-90" />
+                Barcode Value
+              </label>
+              <input
+                className={INPUT_CLASS}
+                value={form.barcodeValue}
+                onChange={(e) => setForm((prev) => ({ ...prev, barcodeValue: e.target.value }))}
+                placeholder="Required"
+              />
+            </div>
+
+            <div>
+              <label className={LABEL_CLASS}>Text Line 1 (optional)</label>
+              <input
+                className={INPUT_CLASS}
+                value={form.textLine1}
+                onChange={(e) => setForm((prev) => ({ ...prev, textLine1: e.target.value }))}
+                placeholder="Optional"
+              />
+            </div>
+
+            <div>
+              <label className={LABEL_CLASS}>Copies</label>
+              <input
+                className={INPUT_CLASS}
+                type="number"
+                min="1"
+                max="250"
+                value={form.copies}
+                onChange={(e) => setForm((prev) => ({ ...prev, copies: e.target.value }))}
+              />
+            </div>
+
+            <div className="flex items-end gap-3 md:justify-end">
+              <button className={BUTTON_CLASS} type="button" onClick={runTestPrint} disabled={printing}>
+                Test
+              </button>
+              <button className={BUTTON_CLASS} type="submit" disabled={printing}>
+                Print
+              </button>
+            </div>
+          </form>
+
+          <div className="retro-window mt-8 p-5 sm:p-6">
+            <h3 className="flex items-center gap-3 font-display text-4xl leading-none text-[#1b1b1b]">
+              <SpriteIcon frame={statusFrame} label="Current status icon" />
+              Status
+            </h3>
+            <p className="mt-3 text-base text-[#222]">{message}</p>
+            <div className="mt-4 grid gap-2 font-mono text-xs text-[#2b2b2b] sm:grid-cols-2">
+              <span>Job ID: {job?.jobId || '-'}</span>
+              <span>State: {statusText || '-'}</span>
+              <span>Created: {job?.createdAt || '-'}</span>
+              <span>Error: {job?.error || '-'}</span>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="retro-window mt-8 p-5 sm:p-6 text-sm text-[#222]">
+          This printer uses batch-only mode. Paste CSV/newline data below to print sheets.
+        </div>
+      )}
+
+      <form className="retro-window mt-8 p-5 sm:p-6" onSubmit={submitBatch}>
+        <h3 className="font-display text-4xl leading-none text-[#1b1b1b]">Batch Print</h3>
+        <p className="mt-3 text-sm text-[#2a2a2a]">
+          One field only: paste CSV/newline barcode data. Batch type cannot be mixed. Limit: 1-120 values.
+        </p>
+
+        <div className="mt-5 grid gap-6 md:grid-cols-2">
+          <div>
+            <label className={LABEL_CLASS}>Batch Label Type</label>
+            <select
+              className={INPUT_CLASS}
+              value={form.labelType}
+              onChange={(e) => setForm((prev) => ({ ...prev, labelType: e.target.value }))}
+            >
+              {printer.labelTypes.map((item) => (
+                <option key={item.id} value={item.id}>{item.label} ({item.id})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={LABEL_CLASS}>Batch Barcode Type</label>
+            <select
+              className={INPUT_CLASS}
+              value={batchType}
+              onChange={(e) => setBatchType(e.target.value)}
+            >
+              {printer.capabilities.barcodeTypes.map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end md:justify-end">
+            <button className={BUTTON_CLASS} type="submit" disabled={batchPrinting}>
+              Save + Print Batch
+            </button>
+          </div>
         </div>
 
-        <div>
-          <label className={LABEL_CLASS}>Barcode Type</label>
-          <select
-            className={INPUT_CLASS}
-            value={form.barcodeType}
-            onChange={(e) => setForm((prev) => ({ ...prev, barcodeType: e.target.value }))}
-          >
-            {printer.capabilities.barcodeTypes.map((type) => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className={`${LABEL_CLASS} flex items-center gap-2`}>
-            <SpriteIcon frame={SPRITE_FRAME.scanner} label="Barcode scanner" className="scale-90" />
-            Barcode Value
-          </label>
-          <input
-            className={INPUT_CLASS}
-            value={form.barcodeValue}
-            onChange={(e) => setForm((prev) => ({ ...prev, barcodeValue: e.target.value }))}
-            placeholder="Required"
+        <div className="mt-5">
+          <label className={LABEL_CLASS}>Batch Barcode Data</label>
+          <textarea
+            className={`${INPUT_CLASS} min-h-40`}
+            value={batchInput}
+            onChange={(e) => setBatchInput(e.target.value)}
+            placeholder={'051000568235,051000568236\nor newline separated values'}
           />
         </div>
 
-        <div>
-          <label className={LABEL_CLASS}>Text Line 1 (optional)</label>
-          <input
-            className={INPUT_CLASS}
-            value={form.textLine1}
-            onChange={(e) => setForm((prev) => ({ ...prev, textLine1: e.target.value }))}
-            placeholder="Optional"
-          />
-        </div>
-
-        <div>
-          <label className={LABEL_CLASS}>Copies</label>
-          <input
-            className={INPUT_CLASS}
-            type="number"
-            min="1"
-            max="250"
-            value={form.copies}
-            onChange={(e) => setForm((prev) => ({ ...prev, copies: e.target.value }))}
-          />
-        </div>
-
-        <div className="flex items-end gap-3 md:justify-end">
-          <button className={BUTTON_CLASS} type="button" onClick={runTestPrint} disabled={printing}>
-            Test
-          </button>
-          <button className={BUTTON_CLASS} type="submit" disabled={printing}>
-            Print
-          </button>
+        <div className="mt-4 grid gap-2 font-mono text-xs text-[#2b2b2b] sm:grid-cols-2">
+          <span>{batchMessage}</span>
+          <span>Batch ID: {batchSummary?.batchId ?? '-'}</span>
+          <span>Saved Count: {batchSummary?.count ?? '-'}</span>
+          <span>Sent/Error: {(batchSummary?.sentCount ?? '-')}/{(batchSummary?.errorCount ?? '-')}</span>
         </div>
       </form>
-
-      <div className="retro-window mt-8 p-5 sm:p-6">
-        <h3 className="flex items-center gap-3 font-display text-4xl leading-none text-[#1b1b1b]">
-          <SpriteIcon frame={statusFrame} label="Current status icon" />
-          Status
-        </h3>
-        <p className="mt-3 text-base text-[#222]">{message}</p>
-        <div className="mt-4 grid gap-2 font-mono text-xs text-[#2b2b2b] sm:grid-cols-2">
-          <span>Job ID: {job?.jobId || '-'}</span>
-          <span>State: {statusText || '-'}</span>
-          <span>Created: {job?.createdAt || '-'}</span>
-          <span>Error: {job?.error || '-'}</span>
-        </div>
-      </div>
     </section>
   );
 }

@@ -7,6 +7,78 @@ use RuntimeException;
 
 final class ZebraLabelService
 {
+    /**
+     * @param list<string> $values
+     */
+    public function buildBatchGridZpl(string $labelType, string $barcodeType, array $values): string
+    {
+        $barcodeType = strtoupper(trim($barcodeType));
+        $labelType = strtolower(trim($labelType));
+        $count = count($values);
+
+        if ($count < 1 || $count > 12) {
+            throw new RuntimeException('Zebra batch grid requires 1 to 12 values per label.');
+        }
+
+        $title = $labelType === 'status-tag' ? 'Status Tag Batch' : 'Waco ID Batch';
+
+        $xPositions = [24, 414];
+        $yStart = 38;
+        $rowStep = 194;
+        $cellWidth = 374;
+        $cellHeight = 178;
+
+        $lines = [
+            '^XA',
+            '^CI28',
+            '^PW812',
+            '^LL1218',
+            '^LH0,0',
+            sprintf('^FO24,8^A0N,24,22^FD%s (%d)^FS', $title, $count),
+        ];
+
+        foreach ($values as $index => $rawValue) {
+            $safeValue = $this->sanitize($rawValue);
+            if ($safeValue === '') {
+                continue;
+            }
+
+            if ($barcodeType === 'UPCA') {
+                $safeValue = $this->normalizeUpca($safeValue);
+            }
+
+            $row = intdiv($index, 2);
+            $col = $index % 2;
+
+            $x = $xPositions[$col];
+            $y = $yStart + ($row * $rowStep);
+
+            $lines[] = sprintf('^FO%d,%d^GB%d,%d,1^FS', $x, $y, $cellWidth, $cellHeight);
+            $lines[] = sprintf('^FO%d,%d^A0N,20,18^FD#%d^FS', $x + 8, $y + 6, $index + 1);
+
+            if ($barcodeType === 'QR') {
+                $lines[] = sprintf('^FO%d,%d^BQN,2,3^FDLA,%s^FS', $x + 12, $y + 26, $safeValue);
+                $lines[] = sprintf('^FO%d,%d^A0N,18,16^FD%s^FS', $x + 142, $y + 84, $safeValue);
+                continue;
+            }
+
+            if ($barcodeType === 'UPCA') {
+                $lines[] = '^BY2,2,64';
+                $lines[] = sprintf('^FO%d,%d^BUN,64,N,N^FD%s^FS', $x + 12, $y + 28, $safeValue);
+                $lines[] = sprintf('^FO%d,%d^A0N,20,18^FD%s^FS', $x + 12, $y + 118, $safeValue);
+                continue;
+            }
+
+            $lines[] = '^BY2,2,64';
+            $lines[] = sprintf('^FO%d,%d^BCN,64,N,N,N^FD%s^FS', $x + 12, $y + 28, $safeValue);
+            $lines[] = sprintf('^FO%d,%d^A0N,20,18^FD%s^FS', $x + 12, $y + 118, $safeValue);
+        }
+
+        $lines[] = '^XZ';
+
+        return implode("\n", $lines) . "\n";
+    }
+
     public function buildZpl(string $labelType, string $barcodeType, string $barcodeValue, ?string $textLine1): string
     {
         $barcodeType = strtoupper(trim($barcodeType));

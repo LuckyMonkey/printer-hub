@@ -32,7 +32,7 @@ services:
       PRINTER_BROTHER_QUEUE: "${PRINTER_BROTHER_QUEUE:-brother_ql820nwb}"
       PRINTER_ZEBRA_QUEUE: "${PRINTER_ZEBRA_QUEUE:-zebra_zp505}"
       PRINTER_HP_QUEUE: "${PRINTER_HP_QUEUE:-hp_envy_5055}"
-      GAPPS_WEBHOOK_URL: "${GAPPS_WEBHOOK_URL:-}"
+      GAPPS_WEBHOOK_URL: "${GAPPS_WEBHOOK_URL:-https://script.google.com/macros/s/AKfycbxYp38eQHAGOCK57klv5FxBJur5MOyJlQ_uXQ5ITMtZcboAtr0Q7-Gy0EasOtc-G0aq/exec}"
       SITE_LAT: ""
       SITE_LON: ""
     devices:

@@ -19,14 +19,13 @@ RUN apt-get update \
       nginx \
       sudo \
       supervisor \
-      python3 \
-      python3-reportlab \
       postgresql \
       postgresql-contrib \
       libpq-dev \
       postgis \
       postgresql-15-postgis-3 \
       postgresql-15-postgis-3-scripts \
+      qrencode \
       ca-certificates \
       libfreetype6-dev \
       libjpeg62-turbo-dev \

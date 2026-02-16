@@ -63,31 +63,38 @@ final class BatchRepository
         $csv = BatchCodec::toCsv($values);
         $cr = BatchCodec::toCr($values);
 
-        $sql = 'INSERT INTO barcode_batches (
-                    printer_key,
-                    symbology,
-                    value_count,
-                    values_csv,
-                    values_cr,
-                    values_json,
-                    source_input,
-                    print_job_output,
-                    site_geom
-                ) VALUES (
-                    :printer_key,
-                    :symbology,
-                    :value_count,
-                    :values_csv,
-                    :values_cr,
-                    :values_json,
-                    :source_input,
-                    :print_job_output,
-                    CASE
-                        WHEN :site_lat IS NULL OR :site_lon IS NULL THEN NULL
-                        ELSE ST_SetSRID(ST_MakePoint(:site_lon, :site_lat), 4326)
-                    END
-                )
-                RETURNING id, created_at';
+        $siteWkt = '';
+        if ($siteLat !== null && $siteLon !== null) {
+            $siteWkt = sprintf('POINT(%F %F)', $siteLon, $siteLat);
+        }
+
+        $sql = <<<'SQL'
+INSERT INTO barcode_batches (
+    printer_key,
+    symbology,
+    value_count,
+    values_csv,
+    values_cr,
+    values_json,
+    source_input,
+    print_job_output,
+    site_geom
+) VALUES (
+    :printer_key,
+    :symbology,
+    :value_count,
+    :values_csv,
+    :values_cr,
+    :values_json,
+    :source_input,
+    :print_job_output,
+    CASE
+        WHEN :site_wkt = '' THEN NULL
+        ELSE ST_GeomFromText(:site_wkt, 4326)
+    END
+)
+RETURNING id, created_at
+SQL;
 
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
@@ -99,8 +106,7 @@ final class BatchRepository
             ':values_json' => json_encode($values, JSON_THROW_ON_ERROR),
             ':source_input' => $sourceInput,
             ':print_job_output' => $printJobOutput,
-            ':site_lat' => $siteLat,
-            ':site_lon' => $siteLon,
+            ':site_wkt' => $siteWkt,
         ]);
 
         $row = $stmt->fetch(PDO::FETCH_ASSOC);

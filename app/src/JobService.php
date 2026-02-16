@@ -81,24 +81,8 @@ final class JobService
             ];
         }
 
-        $jsonSpec = sprintf('%s/%s.json', $tmpDir, uniqid('spec_', true));
-        $pdfFile = sprintf('%s/%s.pdf', $tmpDir, uniqid('job_', true));
-
-        $specPayload = [
-            'template' => $template,
-            'symbology' => $symbology,
-            'values' => $values,
-            'fillSheet' => (bool) ($payload['fillSheet'] ?? true),
-        ];
-
-        file_put_contents($jsonSpec, json_encode($specPayload, JSON_PRETTY_PRINT));
-
-        $this->commands->mustRun([
-            'python3',
-            '/var/www/app/scripts/render_labels.py',
-            '--input', $jsonSpec,
-            '--output', $pdfFile,
-        ]);
+        $textFile = sprintf('%s/%s.txt', $tmpDir, uniqid('job_', true));
+        file_put_contents($textFile, $this->buildTextDocument($template, $symbology, $values));
 
         $out = $this->commands->mustRun([
             'sudo',
@@ -106,13 +90,13 @@ final class JobService
             '-d', $printer,
             '-t', $title,
             '-n', (string) $copies,
-            $pdfFile,
+            $textFile,
         ]);
 
         return [
             'submitted' => true,
             'jobOutput' => $out,
-            'file' => $pdfFile,
+            'file' => $textFile,
             'template' => $template,
         ];
     }
@@ -248,5 +232,25 @@ final class JobService
             '^FO170,95^A0N,24,24^FD' . $safeValue . '^FS',
             $footer,
         ]);
+    }
+
+    /**
+     * @param list<string> $values
+     */
+    private function buildTextDocument(string $template, string $symbology, array $values): string
+    {
+        $lines = [
+            'Printer Hub',
+            sprintf('Template: %s', $template),
+            sprintf('Symbology: %s', strtoupper($symbology)),
+            sprintf('Count: %d', count($values)),
+            '',
+        ];
+
+        foreach ($values as $index => $value) {
+            $lines[] = sprintf('%d. %s', $index + 1, $value);
+        }
+
+        return implode("\n", $lines) . "\n";
     }
 }

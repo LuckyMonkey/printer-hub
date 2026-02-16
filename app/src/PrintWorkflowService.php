@@ -191,24 +191,8 @@ final class PrintWorkflowService
             throw new RuntimeException('Unable to create temporary print directory.');
         }
 
-        $jsonSpec = sprintf('%s/%s.json', $tmpDir, uniqid('spec_', true));
-        $pdfFile = sprintf('%s/%s.pdf', $tmpDir, uniqid('job_', true));
-
-        $specPayload = [
-            'template' => $template,
-            'symbology' => $symbology,
-            'values' => $values,
-            'fillSheet' => false,
-        ];
-
-        file_put_contents($jsonSpec, json_encode($specPayload, JSON_PRETTY_PRINT));
-
-        $this->commands->mustRun([
-            'python3',
-            '/var/www/app/scripts/render_labels.py',
-            '--input', $jsonSpec,
-            '--output', $pdfFile,
-        ]);
+        $textFile = sprintf('%s/%s.txt', $tmpDir, uniqid('job_', true));
+        file_put_contents($textFile, $this->buildSimpleTextDocument($template, $symbology, $values));
 
         $jobOutput = $this->commands->mustRun([
             'sudo',
@@ -216,7 +200,7 @@ final class PrintWorkflowService
             '-d', $queue,
             '-t', $title,
             '-n', (string) $copies,
-            $pdfFile,
+            $textFile,
         ]);
 
         return $this->persistAndBackup(
@@ -226,7 +210,7 @@ final class PrintWorkflowService
             sourceInput: $parsed['source'],
             jobOutput: $jobOutput,
             printerQueue: $queue,
-            file: $pdfFile
+            file: $textFile
         );
     }
 
@@ -429,5 +413,25 @@ final class PrintWorkflowService
         }
 
         return (float) $raw;
+    }
+
+    /**
+     * @param list<string> $values
+     */
+    private function buildSimpleTextDocument(string $template, string $symbology, array $values): string
+    {
+        $lines = [
+            'Printer Hub',
+            sprintf('Template: %s', $template),
+            sprintf('Symbology: %s', strtoupper($symbology)),
+            sprintf('Count: %d', count($values)),
+            '',
+        ];
+
+        foreach ($values as $index => $value) {
+            $lines[] = sprintf('%d. %s', $index + 1, $value);
+        }
+
+        return implode("\n", $lines) . "\n";
     }
 }
