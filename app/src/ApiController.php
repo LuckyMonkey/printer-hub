@@ -10,7 +10,12 @@ final class ApiController
     public function __construct(
         private readonly PrinterService $printers,
         private readonly JobService $jobs,
-        private readonly PrintWorkflowService $workflow
+        private readonly PrintWorkflowService $workflow,
+        private readonly MultiPrinterPrintService $multiPrint,
+        private readonly RateLimiter $rateLimiter,
+        private readonly PrinterRegistry $registry,
+        private readonly ?SeriesPrintService $seriesPrint = null,
+        private readonly ?BatchPrintService $batchPrint = null
     ) {
     }
 
@@ -26,7 +31,14 @@ final class ApiController
             }
 
             if ($method === 'GET' && $path === '/api/config') {
-                $this->respond($this->workflow->config());
+                $legacy = $this->workflow->config();
+                $legacy['multiPrinter'] = $this->multiPrint->config();
+                $this->respond($legacy);
+                return;
+            }
+
+            if ($method === 'GET' && $path === '/api/print/config') {
+                $this->respond($this->multiPrint->config());
                 return;
             }
 
@@ -53,6 +65,17 @@ final class ApiController
                 return;
             }
 
+            if ($method === 'POST' && $path === '/api/batches/save-print-early') {
+                if ($this->batchPrint === null) {
+                    throw new RuntimeException('Batch early print service is unavailable.');
+                }
+
+                $this->enforceRateLimit();
+                $payload = $this->jsonBody();
+                $this->respond($this->batchPrint->saveAndPrintEarly($payload), 202);
+                return;
+            }
+
             if ($method === 'POST' && $path === '/api/print/brother') {
                 $payload = $this->jsonBody();
                 $this->respond($this->workflow->submitBrother($payload));
@@ -68,6 +91,46 @@ final class ApiController
             if ($method === 'POST' && $path === '/api/print/hp') {
                 $payload = $this->jsonBody();
                 $this->respond($this->workflow->submitHp($payload));
+                return;
+            }
+
+            if ($method === 'POST' && $path === '/api/print/diagnostics/brother') {
+                $this->enforceRateLimit();
+                $payload = $this->jsonBody();
+                $this->respond($this->multiPrint->brotherDiagnostics($payload));
+                return;
+            }
+
+            if ($method === 'POST' && $path === '/api/print') {
+                $this->enforceRateLimit();
+                $payload = $this->jsonBody();
+                $this->respond($this->multiPrint->submit($payload), 202);
+                return;
+            }
+
+            if ($method === 'GET' && preg_match('#^/api/print/([a-f0-9]{16})$#', $path, $m)) {
+                $this->respond($this->multiPrint->status($m[1]));
+                return;
+            }
+
+            if ($method === 'POST' && $path === '/api/series/print') {
+                if ($this->seriesPrint === null) {
+                    throw new RuntimeException('Series print service is unavailable.');
+                }
+
+                $this->enforceRateLimit();
+                $payload = $this->jsonBody();
+                $this->respond($this->seriesPrint->printSeries($payload), 202);
+                return;
+            }
+
+            if ($method === 'GET' && $path === '/api/series') {
+                if ($this->seriesPrint === null) {
+                    throw new RuntimeException('Series print service is unavailable.');
+                }
+
+                $limit = isset($query['limit']) ? (int) $query['limit'] : 200;
+                $this->respond(['series' => $this->seriesPrint->listSeries($limit)]);
                 return;
             }
 
@@ -111,5 +174,34 @@ final class ApiController
         header('Access-Control-Allow-Headers: Content-Type');
         header('Access-Control-Allow-Methods: GET,POST,OPTIONS');
         echo json_encode($payload, JSON_PRETTY_PRINT);
+    }
+
+    private function enforceRateLimit(): void
+    {
+        $ip = $this->clientIp();
+        $limit = $this->registry->rateLimitPerMinute();
+        $allowed = $this->rateLimiter->allow('api-print:' . $ip, $limit, 60);
+        if (!$allowed) {
+            throw new RuntimeException('Rate limit exceeded. Please retry in a minute.');
+        }
+    }
+
+    private function clientIp(): string
+    {
+        $forwarded = trim((string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''));
+        if ($forwarded !== '') {
+            $parts = explode(',', $forwarded);
+            $candidate = trim($parts[0]);
+            if (filter_var($candidate, FILTER_VALIDATE_IP) !== false) {
+                return $candidate;
+            }
+        }
+
+        $remote = trim((string) ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'));
+        if (filter_var($remote, FILTER_VALIDATE_IP) !== false) {
+            return $remote;
+        }
+
+        return '127.0.0.1';
     }
 }

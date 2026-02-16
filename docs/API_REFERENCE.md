@@ -2,70 +2,89 @@
 
 Base URL: `http://localhost:8088`
 
-## Health and Config
+## Health
 ### GET `/api/health`
-Returns backend health including CUPS/DB checks.
+Returns service health summary (CUPS + DB).
 
 ### GET `/api/config`
-Returns queue mapping, required barcode counts, and supported symbologies.
+Legacy + extended configuration payload.
 
-## Printer Management
-### GET `/api/printers`
-Returns installed CUPS printers and default printer.
+## Unified Print API
+### GET `/api/print/config`
+Returns printer list, label types, capabilities, and Brother mode.
 
-### POST `/api/printers/add`
-Creates or updates a CUPS queue.
+### POST `/api/print`
+Submits a printer job.
 
 Body:
 ```json
 {
-  "name": "zebra_zp505",
-  "uri": "usb://Zebra%20Technologies/...",
-  "model": "raw",
-  "setDefault": true
+  "printerId": "zebra-zp505",
+  "labelType": "waco-id",
+  "barcodeType": "CODE128",
+  "barcodeValue": "051000568235",
+  "textLine1": "Spaghettios",
+  "copies": 1
 }
 ```
 
-## Queue and Batches
-### GET `/api/queue`
-Returns pending CUPS jobs.
-
-### GET `/api/batches?printer=<brother|zebra|hp>&limit=20`
-Returns recent persisted batches.
-
-## Print Endpoints
-### POST `/api/print/brother`
-- Requires exactly 1 value
-- Uses single 2.4x1.1 PDF flow
-
-### POST `/api/print/zebra`
-- Requires exactly 12 values
-- Uses 4x6 ZPL 12-up flow (`lp -o raw`)
-- Optional `zebraMode`: `auto` (default), `z64`, `native`
-- `auto` behavior: `code128/upc` render as raster `^GFA ... :Z64:`, `qr` falls back to native ZPL
-- Response includes `zebraRenderMode` with the effective mode used.
-
-### POST `/api/print/hp`
-- Requires exactly 30 values
-- Uses 3x10 sheet PDF flow
-
-Common body:
+Success response:
 ```json
 {
-  "symbology": "code128",
-  "zebraMode": "auto",
-  "title": "job-name",
-  "copies": 1,
-  "input": "A1\rA2\nA3,A4"
+  "jobId": "a1b2c3d4e5f60708",
+  "status": "sent"
+}
+```
+
+Error response:
+```json
+{
+  "jobId": "a1b2c3d4e5f60708",
+  "status": "error",
+  "error": "Socket connection failed ..."
+}
+```
+
+### GET `/api/print/{jobId}`
+Returns status payload for polling.
+
+Status lifecycle:
+- `queued`
+- `sending`
+- `sent`
+- `error`
+
+### POST `/api/print/diagnostics/brother`
+Runs Brother connectivity diagnostics and optional template test print.
+
+Body:
+```json
+{
+  "sendTest": true,
+  "labelType": "waco-id",
+  "barcodeValue": "051000568235",
+  "textLine1": "Spaghettios"
 }
 ```
 
 ## Validation Rules
-- Symbology: `code128`, `qr`, `upc`
-- UPC values: 11 or 12 digits
-- Copies: 1..250
-- Input parser separators: CR, newline, comma
+- `printerId`: one of `zebra-zp505`, `brother-ql820`, `hp-envy-5055`
+- `labelType`: must exist for selected printer
+- `barcodeType`: `CODE128`, `UPCA`, `QR`
+- `UPCA`: 11 or 12 digits
+- `copies`: `1..250`
 
-## Legacy Compatibility
-### POST `/api/jobs`
-Original generic endpoint remains for backward compatibility.
+## Security and Reliability
+- Per-IP rate limit on print endpoints.
+- Shell calls use argument arrays (`proc_open` without shell interpolation).
+- Job errors are persisted and queryable by job status endpoint.
+
+## Legacy Endpoints (still available)
+- `GET /api/printers`
+- `POST /api/printers/add`
+- `GET /api/queue`
+- `GET /api/batches`
+- `POST /api/print/brother`
+- `POST /api/print/zebra`
+- `POST /api/print/hp`
+- `POST /api/jobs`

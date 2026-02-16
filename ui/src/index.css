@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=VT323&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-[#627686] text-[#101010] antialiased font-sans;
+    background-image:
+      linear-gradient(130deg, #90a0ac 0%, #748796 26%, #5d7282 52%, #4f6474 100%),
+      repeating-linear-gradient(
+        0deg,
+        rgba(255, 255, 255, 0.06) 0,
+        rgba(255, 255, 255, 0.06) 1px,
+        rgba(0, 0, 0, 0.02) 1px,
+        rgba(0, 0, 0, 0.02) 3px
+      );
+  }
+
+  code {
+    @apply font-mono;
+  }
+}
+
+@layer components {
+  .sprite-icon {
+    width: 32px;
+    height: 32px;
+    display: inline-block;
+    overflow: hidden;
+    position: relative;
+    flex: 0 0 32px;
+  }
+
+  .sprite-icon-sheet {
+    width: 32px;
+    height: 256px;
+    display: block;
+    image-rendering: pixelated;
+  }
+
+  .retro-window {
+    @apply rounded-none border-2 border-[#f7f7f7] border-r-[#4a4a4a] border-b-[#4a4a4a] bg-[#d4d4d4];
+    box-shadow:
+      inset 1px 1px 0 #ffffff,
+      inset -1px -1px 0 #8a8a8a,
+      0 10px 26px rgba(0, 0, 0, 0.18);
+  }
+
+  .retro-titlebar {
+    @apply border-2 border-[#f7f7f7] border-r-[#3f3f3f] border-b-[#3f3f3f] bg-gradient-to-r from-[#1f4688] via-[#2e5ea9] to-[#6288c4] text-[#f6f9ff];
+  }
+
+  .retro-label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-[#2d2d2d];
+  }
+
+  .retro-input {
+    @apply w-full rounded-none border-2 border-[#4f4f4f] border-r-[#fcfcfc] border-b-[#fcfcfc] bg-[#efefef] px-4 py-3 text-[15px] text-[#1a1a1a] shadow-[inset_1px_1px_0_#c6c6c6];
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
+
+  .retro-input:focus {
+    @apply outline-none ring-2 ring-[#2c5ba4] ring-offset-0;
+  }
+
+  .retro-button {
+    @apply inline-flex items-center justify-center rounded-none border-2 border-[#f8f8f8] border-r-[#4a4a4a] border-b-[#4a4a4a] bg-[#d7d7d7] text-[#111111] font-semibold transition;
+    box-shadow: inset 1px 1px 0 #ffffff, inset -1px -1px 0 #8f8f8f;
+  }
+
+  .retro-button:hover {
+    @apply bg-[#e6e6e6];
+  }
+
+  .retro-button:active {
+    @apply border-[#4a4a4a] border-r-[#f8f8f8] border-b-[#f8f8f8] bg-[#c9c9c9];
+    box-shadow: inset 1px 1px 0 #9a9a9a, inset -1px -1px 0 #efefef;
+  }
+}

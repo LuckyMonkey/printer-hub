@@ -1,76 +1,115 @@
 # Printer Hub
 
-All-in-one local print platform for three printer workflows with one UI:
-- Zebra ZP505 (USB): 12 barcodes on a 4x6 ZPL label (raster Z64 or native ZPL)
-- Brother QL-820NWB (network): single barcode on 2.4x1.1 label
-- HP Envy 5055 (network): 30 barcodes on a 3x10 sheet
+Printer Hub is an all-in-one local print platform for three printer workflows:
+- Zebra ZP-505: raw ZPL
+- Brother QL-820NWB: P-touch Template mode (template select + object injection)
+- HP Envy 5055: normal CUPS text print (minimal path)
 
 The container runs:
-- `nginx` (serves React UI + routes API)
-- `php-fpm` (print workflow API)
-- `cups` (print queue management + dispatch)
-- `postgresql + postgis` (batch persistence)
-
-## Features
-- OS9-style centered UI with 3 buttons and per-printer pages.
-- Strict per-printer count validation (1 / 12 / 30).
-- Barcode symbologies: `code128`, `qr`, `upc`.
-- Zebra raster path: GD-generated monochrome image packed to `^GFA ... :Z64:`.
-- CR/newline/comma input normalization to CSV + restore to multiline.
-- Stored batch history in PostGIS-backed Postgres.
-- Optional Google Sheets backup via Apps Script webhook.
+- `nginx` (React UI + API routing)
+- `php-fpm` (API backend)
+- `cups` (queues + dispatch)
+- `postgresql + postgis` (existing persistence + print job tracking)
 
 ## Quick Start
 ```bash
 cd /home/fridge/docker/printer-hub
+cp .env.example .env
 docker-compose up -d --build
 ```
 
-- UI: `http://localhost:8088/ui/`
+- UI: `http://localhost:8088/ui/printers`
 - CUPS Admin: `http://localhost:8631/`
-- API Health: `http://localhost:8088/api/health`
+- Health: `http://localhost:8088/api/health`
 
-## Routes
-- Home: `/ui/`
-- Brother page: `/ui/printers/brother`
-- Zebra page: `/ui/printers/zebra`
-- HP page: `/ui/printers/hp`
+## UI
+- Printer list: `/ui/printers`
+- Zebra form: `/ui/printers/zebra-zp505`
+- Brother form: `/ui/printers/brother-ql820`
+- HP form: `/ui/printers/hp-envy-5055`
 
-## Zebra Render Modes
-`POST /api/print/zebra` accepts optional `zebraMode`:
-- `auto` (default): `code128` and `upc` use raster Z64, `qr` uses native ZPL.
-- `z64`: force raster mode (`code128` and `upc` only).
-- `native`: force native barcode ZPL commands.
+Each printer page has:
+- label type selector
+- barcode type selector (`CODE128`, `UPCA`, `QR`)
+- `barcodeValue`, optional `textLine1`, `copies`
+- `Print` button + `Test` button
+- status polling (`queued`, `sending`, `sent`/printed, `error`)
 
-## Environment
-Compose reads from `.env`.
+## API
+- `GET /api/print/config`
+- `POST /api/print`
+- `GET /api/print/{jobId}`
+- `POST /api/print/diagnostics/brother`
 
-Create from template:
+Example:
 ```bash
-cp .env.example .env
+curl -sS -X POST http://localhost:8088/api/print \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "printerId": "zebra-zp505",
+    "labelType": "waco-id",
+    "barcodeType": "CODE128",
+    "barcodeValue": "051000568235",
+    "textLine1": "Spaghettios",
+    "copies": 1
+  }'
 ```
 
-Required for Google Sheets backup:
-- `GAPPS_WEBHOOK_URL=https://script.google.com/macros/s/.../exec`
+## Printer Transport Setup
+
+### 1) Set printer hosts/queues
+Edit `.env` (see `.env.example`):
+- Zebra: `ZEBRA_TRANSPORT`, `ZEBRA_HOST`, `ZEBRA_PORT`, `PRINTER_ZEBRA_QUEUE`
+- Brother: `BROTHER_MODE`, `BROTHER_TRANSPORT`, `BROTHER_HOST`, `BROTHER_PORT`, `PRINTER_BROTHER_QUEUE`
+- HP: `PRINTER_HP_QUEUE`
+
+### 2) Create raw CUPS queues (if using CUPS transport)
+Use `raw` model so no filtering occurs for Zebra/Brother protocol bytes:
+```bash
+# Zebra raw queue (socket/AppSocket)
+lpadmin -p zebra_zp505 -E -v socket://192.168.1.120:9100 -m raw
+cupsenable zebra_zp505
+accept zebra_zp505
+
+# Brother raw queue (socket/AppSocket)
+lpadmin -p brother_ql820nwb -E -v socket://192.168.1.121:9100 -m raw
+cupsenable brother_ql820nwb
+accept brother_ql820nwb
+
+# HP normal queue (drivered/IPP)
+# Example URI varies per network/discovery:
+lpadmin -p hp_envy_5055 -E -v ipp://192.168.1.122/ipp/print -m everywhere
+cupsenable hp_envy_5055
+accept hp_envy_5055
+```
+
+### 3) Brother templates and label mapping
+The Brother template map lives in `app/config/printers.php`:
+- `labelType -> templateId`
+- object mapping (`barcodeObjectIndex`, `textObjectIndex`)
+
+Default map:
+- `waco-id -> templateId 1`
+- `status-tag -> templateId 2`
+- object `1 = barcodeValue`, object `2 = textLine1`
+
+Load your templates onto the QL-820NWB (P-touch Template / Template Appliance mode), then keep `templateId` and object indices aligned with `app/config/printers.php`.
+
+### 4) Brother diagnostic test
+```bash
+curl -sS -X POST http://localhost:8088/api/print/diagnostics/brother \
+  -H 'Content-Type: application/json' \
+  -d '{"sendTest": true, "labelType": "waco-id"}'
+```
+
+## Notes
+- Raw socket/CUPS success means data was sent to the printer transport; UI treats `sent` as printed success.
+- Rate limiting is enabled for print endpoints (per-IP, per-minute).
+- Structured job logs are written to `PRINT_JOB_LOG_PATH`.
 
 ## Documentation Index
-- Architecture: `docs/ARCHITECTURE.md`
-- API reference: `docs/API_REFERENCE.md`
-- Deployment and operations: `docs/DEPLOYMENT_AND_OPS.md`
-- Printer queue setup: `docs/PRINTER_SETUP.md`
-- Google Apps Script backup: `docs/GOOGLE_SHEETS_BACKUP.md`
-- Development guide: `docs/DEVELOPMENT.md`
-- Troubleshooting: `docs/TROUBLESHOOTING.md`
-- Contributing: `CONTRIBUTING.md`
-- Security policy: `SECURITY.md`
-
-## Repo Setup For First Push
-```bash
-git init
-git branch -M main
-git add .
-git commit -m "chore: initial printer-hub platform"
-# set remote and push
-# git remote add origin <your-repo-url>
-# git push -u origin main
-```
+- `docs/ARCHITECTURE.md`
+- `docs/API_REFERENCE.md`
+- `docs/PRINTER_SETUP.md`
+- `docs/DEVELOPMENT.md`
+- `docs/TROUBLESHOOTING.md`

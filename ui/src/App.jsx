@@ -1,43 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import printersSprite from './assets/printers.png';
 
-const PRINTERS = {
-  brother: {
-    key: 'brother',
-    title: 'Brother QL-820NWB',
-    subtitle: 'Single 2.4 x 1.1 barcode label',
-    expectedCount: 1,
-    endpoint: '/api/print/brother',
-    path: '/printers/brother',
-    defaultTitle: 'brother-single-barcode',
-  },
-  zebra: {
-    key: 'zebra',
-    title: 'Zebra ZP505',
-    subtitle: '4x6 ZPL layout with 12 barcodes',
-    expectedCount: 12,
-    endpoint: '/api/print/zebra',
-    path: '/printers/zebra',
-    defaultTitle: 'zebra-4x6-12up',
-  },
-  hp: {
-    key: 'hp',
-    title: 'HP Envy 5055',
-    subtitle: '3x10 sheet with 30 barcodes',
-    expectedCount: 30,
-    endpoint: '/api/print/hp',
-    path: '/printers/hp',
-    defaultTitle: 'hp-avery-3x10-sheet',
-  },
+const PANEL_CLASS = 'retro-window p-8 sm:p-10';
+const LABEL_CLASS = 'retro-label';
+const INPUT_CLASS = 'retro-input mt-2';
+const BUTTON_CLASS = 'retro-button px-6 py-3 text-[17px] leading-none';
+const SUBTLE_BUTTON_CLASS = 'retro-button px-4 py-2 text-[15px] leading-none';
+const SPRITE_SIZE = 32;
+const SPRITE_FRAME = {
+  hp: 0,
+  brother: 1,
+  zebra: 2,
+  scanner: 3,
+  usbDown: 4,
+  usbUp: 5,
+  ethDown: 6,
+  ethUp: 7,
 };
-
-const SYMBOLOGY_OPTIONS = ['code128', 'qr', 'upc'];
-
-function parseValues(text) {
-  return (text || '')
-    .split(/[\r\n,]+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
 
 function detectRoute() {
   const pathname = window.location.pathname || '/ui/';
@@ -46,14 +25,13 @@ function detectRoute() {
     ? withoutBase.slice(0, -1)
     : withoutBase;
 
-  if (normalized === '/printers/brother') return '/printers/brother';
-  if (normalized === '/printers/zebra') return '/printers/zebra';
-  if (normalized === '/printers/hp') return '/printers/hp';
-  return '/';
+  if (normalized === '/printers') return '/printers';
+  if (normalized.startsWith('/printers/')) return normalized;
+  return '/printers';
 }
 
 function goRoute(route, setRoute) {
-  const path = route === '/' ? '/ui/' : `/ui${route}`;
+  const path = `/ui${route}`;
   window.history.pushState({}, '', path);
   setRoute(route);
 }
@@ -71,199 +49,397 @@ async function api(path, options = {}) {
   return data;
 }
 
-function Home({ config, onOpen }) {
+function formatStatus(status) {
+  if (status === 'sent') return 'printed';
+  if (status === 'sending') return 'sending';
+  if (status === 'queued') return 'queued';
+  if (status === 'error') return 'error';
+  return status || 'unknown';
+}
+
+function validateForm(printer, form) {
+  if (!form.barcodeValue.trim()) {
+    return 'Barcode value is required.';
+  }
+
+  const copies = Number(form.copies);
+  if (!Number.isInteger(copies) || copies < 1 || copies > 250) {
+    return 'Copies must be an integer from 1 to 250.';
+  }
+
+  if (form.barcodeType === 'UPCA' && !/^\d{11,12}$/.test(form.barcodeValue.trim())) {
+    return 'UPCA requires 11 or 12 digits.';
+  }
+
+  const maxBarcodeLength = Number(printer?.capabilities?.maxBarcodeLength || 120);
+  if (form.barcodeValue.trim().length > maxBarcodeLength) {
+    return `Barcode value exceeds max length (${maxBarcodeLength}).`;
+  }
+
+  const maxTextLength = Number(printer?.capabilities?.maxTextLine1Length || 120);
+  if ((form.textLine1 || '').trim().length > maxTextLength) {
+    return `Text line 1 exceeds max length (${maxTextLength}).`;
+  }
+
+  return null;
+}
+
+function spriteForPrinter(printerId) {
+  if (printerId === 'hp-envy-5055') return SPRITE_FRAME.hp;
+  if (printerId === 'brother-ql820') return SPRITE_FRAME.brother;
+  return SPRITE_FRAME.zebra;
+}
+
+function normalizeCupsQueues(payload) {
+  if (!payload || !Array.isArray(payload.printers)) {
+    return new Set();
+  }
+
+  return new Set(
+    payload.printers
+      .map((item) => String(item?.name || '').trim())
+      .filter(Boolean)
+  );
+}
+
+function queueConnected(printer, cupsQueues) {
+  if (printer.transport !== 'cups') {
+    const host = String(printer.host || '').trim().toLowerCase();
+    if (!host) return false;
+    if (['127.0.0.1', 'localhost', '::1', '0.0.0.0'].includes(host)) return false;
+    return true;
+  }
+  const queue = String(printer.cupsQueueName || '').trim();
+  if (!queue) {
+    return false;
+  }
+  return cupsQueues.has(queue);
+}
+
+function connectionSprite(printer, isConnected) {
+  const isUsb = printer.printerId === 'zebra-zp505';
+  if (isUsb) {
+    return isConnected ? SPRITE_FRAME.usbUp : SPRITE_FRAME.usbDown;
+  }
+  return isConnected ? SPRITE_FRAME.ethUp : SPRITE_FRAME.ethDown;
+}
+
+function SpriteIcon({ frame, label, className = '' }) {
   return (
-    <section className="window home-window">
-      <h2>Pick Printer</h2>
-      <div className="home-buttons">
-        {Object.values(PRINTERS).map((printer) => (
-          <button key={printer.key} className="home-card" onClick={() => onOpen(printer.path)}>
-            <span className="home-card-title">{printer.title}</span>
-            <span className="home-card-subtitle">{printer.subtitle}</span>
-            <code>{config?.queues?.[printer.key] || `queue:${printer.key}`}</code>
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={`sprite-icon ${className}`.trim()}
+    >
+      <img
+        src={printersSprite}
+        alt=""
+        aria-hidden="true"
+        className="sprite-icon-sheet"
+        style={{ transform: `translateY(${frame * -SPRITE_SIZE}px)` }}
+      />
+    </span>
+  );
+}
+
+function PrinterList({ printers, cupsQueues, onOpen }) {
+  return (
+    <section className={PANEL_CLASS}>
+      <h2 className="font-display text-5xl leading-none text-[#1d1d1d]">Printer Pages</h2>
+      <p className="mt-4 max-w-4xl text-base text-[#2a2a2a]">
+        Open a printer page to choose label type, provide barcode/text input, run a test print, and send production print jobs.
+      </p>
+
+      <div className="mt-8 grid gap-6 lg:grid-cols-3">
+        {printers.map((printer) => (
+          <button
+            key={printer.printerId}
+            className="retro-window p-6 text-left transition hover:translate-y-[-1px]"
+            onClick={() => onOpen(`/printers/${printer.printerId}`)}
+          >
+            <span className="mb-3 flex items-center gap-3">
+              <SpriteIcon frame={spriteForPrinter(printer.printerId)} label={`${printer.displayName} icon`} />
+              <span className="text-xl font-semibold text-[#181818]">{printer.displayName}</span>
+            </span>
+            <span className="mt-1 block text-sm text-[#2e2e2e]">Transport: {printer.transport}</span>
+            <span className="mt-3 flex items-center gap-2 text-xs font-mono text-[#24333f]">
+              <SpriteIcon
+                frame={connectionSprite(printer, queueConnected(printer, cupsQueues))}
+                label="Connection status"
+                className="scale-90"
+              />
+              {queueConnected(printer, cupsQueues)
+                ? 'Link ready'
+                : (printer.transport === 'cups'
+                  ? `Queue missing: ${printer.cupsQueueName || 'unset'}`
+                  : `Socket target invalid: ${printer.host || 'unset'}:${printer.port || 9100}`)}
+            </span>
+            <span className="mt-4 block font-mono text-xs text-[#1a3f7a]">
+              Label Types: {printer.labelTypes.map((t) => t.id).join(', ')}
+            </span>
           </button>
         ))}
       </div>
-      <p className="hint-text">
-        Input parser accepts newlines, CR, or commas and normalizes to CSV for PostGIS storage.
-      </p>
     </section>
   );
 }
 
-function PrinterPage({ printer, config, onBack }) {
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('Ready.');
-  const [batches, setBatches] = useState([]);
+function PrinterPage({ printer, cupsQueues, onBack }) {
+  const defaultLabelType = printer.labelTypes[0]?.id || 'waco-id';
+  const defaultBarcodeType = printer.capabilities?.barcodeTypes?.[0] || 'CODE128';
+  const hasQueue = queueConnected(printer, cupsQueues);
+
   const [form, setForm] = useState({
-    symbology: 'code128',
-    zebraMode: 'auto',
-    title: printer.defaultTitle,
+    labelType: defaultLabelType,
+    barcodeType: defaultBarcodeType,
+    barcodeValue: '',
+    textLine1: '',
     copies: 1,
-    input: '',
   });
 
-  const values = useMemo(() => parseValues(form.input), [form.input]);
-  const remaining = printer.expectedCount - values.length;
-
-  async function loadBatches() {
-    try {
-      const data = await api(`/api/batches?printer=${printer.key}&limit=20`);
-      setBatches(data.batches || []);
-    } catch (err) {
-      setMessage(err.message);
-    }
-  }
+  const [message, setMessage] = useState('Ready.');
+  const [job, setJob] = useState(null);
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
-    loadBatches();
     setForm({
-      symbology: 'code128',
-      zebraMode: 'auto',
-      title: printer.defaultTitle,
+      labelType: defaultLabelType,
+      barcodeType: defaultBarcodeType,
+      barcodeValue: '',
+      textLine1: '',
       copies: 1,
-      input: '',
     });
     setMessage('Ready.');
-  }, [printer.key]);
+    setJob(null);
+  }, [printer.printerId, defaultLabelType, defaultBarcodeType]);
 
-  async function submit(event) {
-    event.preventDefault();
+  async function pollJob(jobId) {
+    let attempts = 0;
+    while (attempts < 20) {
+      attempts += 1;
+      const statusRes = await api(`/api/print/${jobId}`);
+      const snapshot = statusRes.job || null;
+      setJob(snapshot);
 
-    if (values.length !== printer.expectedCount) {
-      setMessage(`Need exactly ${printer.expectedCount} barcodes. Current: ${values.length}`);
+      if (!snapshot) {
+        setMessage('Job status unavailable.');
+        return;
+      }
+
+      if (snapshot.status === 'sent') {
+        setMessage(`Printed (sent): ${jobId}`);
+        return;
+      }
+
+      if (snapshot.status === 'error') {
+        setMessage(`Error: ${snapshot.error || 'unknown error'}`);
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+
+    setMessage(`Job ${jobId} is still processing.`);
+  }
+
+  async function submitCurrent(customPayload = null) {
+    const nextPayload = customPayload || {
+      printerId: printer.printerId,
+      labelType: form.labelType,
+      barcodeType: form.barcodeType,
+      barcodeValue: form.barcodeValue.trim(),
+      textLine1: form.textLine1.trim(),
+      copies: Number(form.copies),
+    };
+
+    const validationError = validateForm(printer, nextPayload);
+    if (validationError) {
+      setMessage(validationError);
       return;
     }
 
-    setLoading(true);
-    setMessage('Submitting print job...');
+    setPrinting(true);
+    setMessage('Queued...');
 
     try {
-      const payload = {
-        symbology: form.symbology,
-        title: form.title,
-        copies: Number(form.copies),
-        input: form.input,
-      };
-      if (printer.key === 'zebra') {
-        payload.zebraMode = form.zebraMode;
-      }
-
-      const result = await api(printer.endpoint, {
+      const res = await api('/api/print', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify(nextPayload),
       });
 
-      setMessage(`Queued: ${result.jobOutput || 'ok'} | batch #${result.batchId}`);
-      await loadBatches();
+      const jobId = res.jobId;
+      if (!jobId) {
+        setMessage('Print API did not return a jobId.');
+        return;
+      }
+
+      setMessage(`Sending... job ${jobId}`);
+      await pollJob(jobId);
     } catch (err) {
       setMessage(err.message);
     } finally {
-      setLoading(false);
+      setPrinting(false);
     }
   }
 
+  async function onSubmit(event) {
+    event.preventDefault();
+    await submitCurrent();
+  }
+
+  async function runTestPrint() {
+    const sample = {
+      printerId: printer.printerId,
+      labelType: defaultLabelType,
+      barcodeType: 'CODE128',
+      barcodeValue: '051000568235',
+      textLine1: 'Spaghettios',
+      copies: 1,
+    };
+
+    setForm((prev) => ({
+      ...prev,
+      labelType: sample.labelType,
+      barcodeType: sample.barcodeType,
+      barcodeValue: sample.barcodeValue,
+      textLine1: sample.textLine1,
+      copies: sample.copies,
+    }));
+
+    await submitCurrent(sample);
+  }
+
+  const statusText = useMemo(() => formatStatus(job?.status || ''), [job]);
+  const statusFrame = useMemo(() => {
+    if (job?.status === 'error') {
+      return connectionSprite(printer, false);
+    }
+    if (job?.status === 'sent') {
+      return connectionSprite(printer, true);
+    }
+    if (!hasQueue) {
+      return connectionSprite(printer, false);
+    }
+    return SPRITE_FRAME.scanner;
+  }, [job?.status, hasQueue, printer]);
+
   return (
-    <section className="window printer-window">
-      <div className="page-head">
-        <button onClick={onBack}>Home</button>
-        <h2>{printer.title}</h2>
-        <span className="queue-pill">{config?.queues?.[printer.key] || 'queue unset'}</span>
+    <section className={PANEL_CLASS}>
+      <div className="flex flex-wrap items-center gap-3">
+        <button className={SUBTLE_BUTTON_CLASS} onClick={onBack}>All Printers</button>
+        <SpriteIcon frame={spriteForPrinter(printer.printerId)} label={`${printer.displayName} icon`} />
+        <h2 className="font-display text-5xl leading-none text-[#1d1d1d]">{printer.displayName}</h2>
       </div>
 
-      <p className="subline">{printer.subtitle}</p>
-
-      <form className="form-layout" onSubmit={submit}>
-        <label>Symbology</label>
-        <select
-          value={form.symbology}
-          onChange={(e) => setForm((prev) => ({ ...prev, symbology: e.target.value }))}
-        >
-          {SYMBOLOGY_OPTIONS.map((option) => (
-            <option key={option} value={option}>{option.toUpperCase()}</option>
-          ))}
-        </select>
-
-        {printer.key === 'zebra' && (
-          <>
-            <label>Zebra Render</label>
-            <select
-              value={form.zebraMode}
-              onChange={(e) => setForm((prev) => ({ ...prev, zebraMode: e.target.value }))}
-            >
-              {(config?.zebraRenderModes || ['auto', 'z64', 'native']).map((mode) => (
-                <option key={mode} value={mode}>{mode.toUpperCase()}</option>
-              ))}
-            </select>
-          </>
-        )}
-
-        <label>Job Title</label>
-        <input
-          value={form.title}
-          onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+      <p className="mt-4 text-sm text-[#2d2d2d]">Printer ID: <span className="font-mono">{printer.printerId}</span></p>
+      <p className="mt-2 flex items-center gap-2 text-xs font-mono text-[#253643]">
+        <SpriteIcon
+          frame={connectionSprite(printer, hasQueue)}
+          label="Connection status"
+          className="scale-90"
         />
+        {hasQueue
+          ? 'Connection available'
+          : (printer.transport === 'cups'
+            ? `Connection unavailable: queue "${printer.cupsQueueName || 'unset'}" missing`
+            : `Connection unavailable: socket host "${printer.host || 'unset'}:${printer.port || 9100}"`)}
+      </p>
 
-        <label>Copies</label>
-        <input
-          type="number"
-          min="1"
-          max="250"
-          value={form.copies}
-          onChange={(e) => setForm((prev) => ({ ...prev, copies: e.target.value }))}
-        />
-
-        <label>Barcode Input</label>
-        <textarea
-          rows={9}
-          placeholder="Paste barcodes separated by newline, CR, or comma"
-          value={form.input}
-          onChange={(e) => setForm((prev) => ({ ...prev, input: e.target.value }))}
-        />
-
-        <div className="status-row">
-          <strong>Parsed: {values.length}</strong>
-          <span>Required: {printer.expectedCount}</span>
-          <span>{remaining > 0 ? `Missing: ${remaining}` : remaining < 0 ? `Over by: ${Math.abs(remaining)}` : 'Ready to print'}</span>
+      <form className="mt-8 grid gap-7 md:grid-cols-2" onSubmit={onSubmit}>
+        <div>
+          <label className={LABEL_CLASS}>Label Type</label>
+          <select
+            className={INPUT_CLASS}
+            value={form.labelType}
+            onChange={(e) => setForm((prev) => ({ ...prev, labelType: e.target.value }))}
+          >
+            {printer.labelTypes.map((item) => (
+              <option key={item.id} value={item.id}>{item.label} ({item.id})</option>
+            ))}
+          </select>
         </div>
 
-        <button type="submit" disabled={loading}>Print {printer.expectedCount}</button>
+        <div>
+          <label className={LABEL_CLASS}>Barcode Type</label>
+          <select
+            className={INPUT_CLASS}
+            value={form.barcodeType}
+            onChange={(e) => setForm((prev) => ({ ...prev, barcodeType: e.target.value }))}
+          >
+            {printer.capabilities.barcodeTypes.map((type) => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className={`${LABEL_CLASS} flex items-center gap-2`}>
+            <SpriteIcon frame={SPRITE_FRAME.scanner} label="Barcode scanner" className="scale-90" />
+            Barcode Value
+          </label>
+          <input
+            className={INPUT_CLASS}
+            value={form.barcodeValue}
+            onChange={(e) => setForm((prev) => ({ ...prev, barcodeValue: e.target.value }))}
+            placeholder="Required"
+          />
+        </div>
+
+        <div>
+          <label className={LABEL_CLASS}>Text Line 1 (optional)</label>
+          <input
+            className={INPUT_CLASS}
+            value={form.textLine1}
+            onChange={(e) => setForm((prev) => ({ ...prev, textLine1: e.target.value }))}
+            placeholder="Optional"
+          />
+        </div>
+
+        <div>
+          <label className={LABEL_CLASS}>Copies</label>
+          <input
+            className={INPUT_CLASS}
+            type="number"
+            min="1"
+            max="250"
+            value={form.copies}
+            onChange={(e) => setForm((prev) => ({ ...prev, copies: e.target.value }))}
+          />
+        </div>
+
+        <div className="flex items-end gap-3 md:justify-end">
+          <button className={BUTTON_CLASS} type="button" onClick={runTestPrint} disabled={printing}>
+            Test
+          </button>
+          <button className={BUTTON_CLASS} type="submit" disabled={printing}>
+            Print
+          </button>
+        </div>
       </form>
 
-      <div className="hint-box">
-        CR/newline/comma is normalized to CSV for DB save, and restored as multiline in recent history.
+      <div className="retro-window mt-8 p-5 sm:p-6">
+        <h3 className="flex items-center gap-3 font-display text-4xl leading-none text-[#1b1b1b]">
+          <SpriteIcon frame={statusFrame} label="Current status icon" />
+          Status
+        </h3>
+        <p className="mt-3 text-base text-[#222]">{message}</p>
+        <div className="mt-4 grid gap-2 font-mono text-xs text-[#2b2b2b] sm:grid-cols-2">
+          <span>Job ID: {job?.jobId || '-'}</span>
+          <span>State: {statusText || '-'}</span>
+          <span>Created: {job?.createdAt || '-'}</span>
+          <span>Error: {job?.error || '-'}</span>
+        </div>
       </div>
-
-      <div className="history">
-        <h3>Recent Batches</h3>
-        <ul>
-          {batches.length === 0 && <li>No saved batches yet.</li>}
-          {batches.map((batch) => (
-            <li key={batch.id}>
-              <strong>Batch #{batch.id}</strong>
-              <span>{batch.createdAt}</span>
-              <span>{batch.symbology.toUpperCase()} | {batch.count} values | Sheets: {batch.sheetsBackup}</span>
-              <code>{batch.csv}</code>
-              <button
-                type="button"
-                onClick={() => setForm((prev) => ({ ...prev, input: batch.restoredMultiline }))}
-              >
-                Load Into Form
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="message-line">{message}</div>
     </section>
   );
 }
 
 export default function App() {
   const [route, setRoute] = useState(detectRoute());
-  const [config, setConfig] = useState(null);
+  const [config, setConfig] = useState({ printers: [], brotherMode: 'template' });
   const [health, setHealth] = useState(null);
+  const [cupsQueues, setCupsQueues] = useState(new Set());
 
   useEffect(() => {
     const onPopState = () => setRoute(detectRoute());
@@ -274,45 +450,91 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [cfg, h] = await Promise.all([
-          api('/api/config'),
+        const [printerConfig, h] = await Promise.all([
+          api('/api/print/config'),
           api('/api/health'),
         ]);
-        setConfig(cfg);
+        setConfig(printerConfig);
         setHealth(h);
+        try {
+          const cups = await api('/api/printers');
+          setCupsQueues(normalizeCupsQueues(cups));
+        } catch {
+          setCupsQueues(new Set());
+        }
       } catch {
-        setConfig(null);
+        setConfig({ printers: [], brotherMode: 'template' });
         setHealth(null);
+        setCupsQueues(new Set());
       }
     })();
   }, []);
 
+  const printerById = useMemo(() => {
+    const map = new Map();
+    for (const printer of config.printers || []) {
+      map.set(printer.printerId, printer);
+    }
+    return map;
+  }, [config]);
+
   let page = null;
-  if (route === '/') {
-    page = <Home config={config} onOpen={(next) => goRoute(next, setRoute)} />;
-  } else if (route === '/printers/brother') {
-    page = <PrinterPage printer={PRINTERS.brother} config={config} onBack={() => goRoute('/', setRoute)} />;
-  } else if (route === '/printers/zebra') {
-    page = <PrinterPage printer={PRINTERS.zebra} config={config} onBack={() => goRoute('/', setRoute)} />;
-  } else if (route === '/printers/hp') {
-    page = <PrinterPage printer={PRINTERS.hp} config={config} onBack={() => goRoute('/', setRoute)} />;
+  if (route === '/printers') {
+    page = (
+      <PrinterList
+        printers={config.printers || []}
+        cupsQueues={cupsQueues}
+        onOpen={(next) => goRoute(next, setRoute)}
+      />
+    );
+  } else if (route.startsWith('/printers/')) {
+    const printerId = route.replace('/printers/', '').trim();
+    const printer = printerById.get(printerId);
+    if (printer) {
+      page = (
+        <PrinterPage
+          printer={printer}
+          cupsQueues={cupsQueues}
+          onBack={() => goRoute('/printers', setRoute)}
+        />
+      );
+    } else {
+      page = (
+        <section className={PANEL_CLASS}>
+          <h2 className="font-display text-4xl leading-none text-[#1b1b1b]">Unknown printer route</h2>
+          <button className={`${SUBTLE_BUTTON_CLASS} mt-4`} onClick={() => goRoute('/printers', setRoute)}>
+            Back to printers
+          </button>
+        </section>
+      );
+    }
   }
 
   return (
-    <div className="desktop-shell">
-      <header className="titlebar">
-        <div className="led" />
-        <strong>Printer Hub OS9</strong>
-        <span className="meta">Brother + Zebra + HP</span>
-      </header>
+    <div className="relative min-h-screen overflow-hidden text-[#111]">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-white/20 to-transparent" />
+      </div>
 
-      {page}
+      <div className="relative mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+        <header className="retro-titlebar mb-6 p-4 sm:p-5">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="h-3.5 w-3.5 rounded-full border border-[#183f18] bg-[#79ed79] shadow-[0_0_8px_rgba(121,237,121,0.8)]" />
+            <strong className="font-display text-5xl leading-none">Printer Hub</strong>
+            <span className="ml-auto text-sm font-mono">Brother Mode: {config.brotherMode || 'template'}</span>
+          </div>
+        </header>
 
-      <footer className="footerbar">
-        <span>CUPS: {health?.cups || 'unknown'}</span>
-        <span>DB: {health?.database || 'unknown'}</span>
-        <span>TZ: {health?.timezone || 'unknown'}</span>
-      </footer>
+        {page}
+
+        <footer className="retro-window mt-6 p-5">
+          <div className="grid gap-3 font-mono text-xs text-[#222] sm:grid-cols-3">
+            <span><strong>CUPS:</strong> {health?.cups || 'unknown'}</span>
+            <span><strong>DB:</strong> {health?.database || 'unknown'}</span>
+            <span><strong>TZ:</strong> {health?.timezone || 'unknown'}</span>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }

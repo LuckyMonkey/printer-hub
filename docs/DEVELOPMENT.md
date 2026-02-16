@@ -1,11 +1,10 @@
 # Development Guide
 
 ## Project Layout
-- `app/`: PHP backend and print rendering script
-- `ui/`: React/Vite frontend
-- `config/`: nginx/cups/supervisor/entrypoint configs
-- `gapps/`: Google Apps Script source
-- `docs/`: operational and technical documentation
+- `app/`: PHP backend + protocol generators + tests
+- `ui/`: React + Tailwind frontend
+- `config/`: nginx/cups/supervisor/runtime config
+- `docs/`: project documentation
 
 ## UI Development
 ```bash
@@ -16,22 +15,18 @@ npm run dev
 
 ## Backend Notes
 - Entry point: `app/public/index.php`
-- API router: `app/src/ApiController.php`
-- CUPS command execution via `CommandRunner`
+- Unified print API: `app/src/MultiPrinterPrintService.php`
+- Printer definitions: `app/config/printers.php`
 
-## Print Render Paths
-- Zebra: generated `.zpl` in `/tmp/printer-hub`
-- Brother/HP: generated `.pdf` via `render_labels.py`
-
-## Local Code Checks
-- Python syntax:
+## Local Checks
+- Brother template command snapshot test:
   ```bash
-  python3 -m py_compile app/scripts/render_labels.py
+  php app/tests/BrotherTemplateClientSnapshotTest.php
   ```
-- Container integration:
+- Full container rebuild:
   ```bash
   docker-compose up -d --build
   ```
 
 ## Documentation Discipline
-Any behavior change must update relevant file in `docs/` and `README.md`.
+Any behavior change must update `README.md` and relevant files in `docs/`.

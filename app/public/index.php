@@ -3,12 +3,25 @@ declare(strict_types=1);
 
 use PrinterHub\ApiController;
 use PrinterHub\BatchRepository;
+use PrinterHub\BatchPrintService;
 use PrinterHub\CommandRunner;
+use PrinterHub\CupsTransport;
 use PrinterHub\Database;
+use PrinterHub\HpLabelService;
+use PrinterHub\JobLogger;
 use PrinterHub\JobService;
+use PrinterHub\MultiPrinterPrintService;
+use PrinterHub\PrintJobRepository;
 use PrinterHub\PrintWorkflowService;
 use PrinterHub\PrinterService;
+use PrinterHub\PrinterRegistry;
+use PrinterHub\RateLimiter;
+use PrinterHub\RawSocketTransport;
+use PrinterHub\SeriesBarcodeRepository;
+use PrinterHub\SeriesPrintService;
 use PrinterHub\SheetsBackupService;
+use PrinterHub\BrotherTemplateClient;
+use PrinterHub\ZebraLabelService;
 use PrinterHub\ZplRasterService;
 
 require_once __DIR__ . '/../src/CommandRunner.php';
@@ -17,7 +30,20 @@ require_once __DIR__ . '/../src/JobService.php';
 require_once __DIR__ . '/../src/BatchCodec.php';
 require_once __DIR__ . '/../src/Database.php';
 require_once __DIR__ . '/../src/BatchRepository.php';
+require_once __DIR__ . '/../src/BatchPrintService.php';
+require_once __DIR__ . '/../src/PrintJobRepository.php';
 require_once __DIR__ . '/../src/SheetsBackupService.php';
+require_once __DIR__ . '/../src/PrinterRegistry.php';
+require_once __DIR__ . '/../src/RateLimiter.php';
+require_once __DIR__ . '/../src/JobLogger.php';
+require_once __DIR__ . '/../src/SeriesBarcodeRepository.php';
+require_once __DIR__ . '/../src/SeriesPrintService.php';
+require_once __DIR__ . '/../src/RawSocketTransport.php';
+require_once __DIR__ . '/../src/CupsTransport.php';
+require_once __DIR__ . '/../src/ZebraLabelService.php';
+require_once __DIR__ . '/../src/BrotherTemplateClient.php';
+require_once __DIR__ . '/../src/HpLabelService.php';
+require_once __DIR__ . '/../src/MultiPrinterPrintService.php';
 require_once __DIR__ . '/../src/ZplRasterService.php';
 require_once __DIR__ . '/../src/PrintWorkflowService.php';
 require_once __DIR__ . '/../src/ApiController.php';
@@ -41,17 +67,38 @@ if (str_starts_with($path, '/api/')) {
     $commands = new CommandRunner();
     $database = new Database();
     $batches = new BatchRepository($database);
+    $registry = new PrinterRegistry();
+    $logger = new JobLogger($registry->logPath());
+    $multiPrint = new MultiPrinterPrintService(
+        registry: $registry,
+        jobs: new PrintJobRepository($database),
+        logger: $logger,
+        socketTransport: new RawSocketTransport(),
+        cupsTransport: new CupsTransport($commands),
+        zebra: new ZebraLabelService(),
+        brother: new BrotherTemplateClient(),
+        hp: new HpLabelService()
+    );
+
     $workflow = new PrintWorkflowService(
         $commands,
         $batches,
         new SheetsBackupService(getenv('GAPPS_WEBHOOK_URL') ?: null),
         new ZplRasterService()
     );
+    $seriesRepo = new SeriesBarcodeRepository($database);
+    $seriesPrint = new SeriesPrintService($multiPrint, $seriesRepo, $logger);
+    $batchPrint = new BatchPrintService($multiPrint, $batches, $logger);
 
     $controller = new ApiController(
         new PrinterService($commands),
         new JobService($commands),
-        $workflow
+        $workflow,
+        $multiPrint,
+        new RateLimiter(),
+        $registry,
+        $seriesPrint,
+        $batchPrint
     );
     $controller->handle($method, $path, $query);
     exit;
