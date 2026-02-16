@@ -10,6 +10,9 @@ final class PrintWorkflowService
     public const PRINTER_BROTHER = 'brother';
     public const PRINTER_ZEBRA = 'zebra';
     public const PRINTER_HP = 'hp';
+    public const ZEBRA_RENDER_AUTO = 'auto';
+    public const ZEBRA_RENDER_Z64 = 'z64';
+    public const ZEBRA_RENDER_NATIVE = 'native';
 
     private const TEMPLATE_SINGLE_SMALL = 'single_2_4x1_1';
     private const TEMPLATE_AVERY_SHEET = 'avery_3x10';
@@ -17,7 +20,8 @@ final class PrintWorkflowService
     public function __construct(
         private readonly CommandRunner $commands,
         private readonly BatchRepository $batches,
-        private readonly SheetsBackupService $sheetsBackup
+        private readonly SheetsBackupService $sheetsBackup,
+        private readonly ZplRasterService $zplRaster
     ) {
     }
 
@@ -62,6 +66,11 @@ final class PrintWorkflowService
                 self::PRINTER_HP => 30,
             ],
             'symbology' => ['code128', 'qr', 'upc'],
+            'zebraRenderModes' => [
+                self::ZEBRA_RENDER_AUTO,
+                self::ZEBRA_RENDER_Z64,
+                self::ZEBRA_RENDER_NATIVE,
+            ],
         ];
     }
 
@@ -95,9 +104,18 @@ final class PrintWorkflowService
         $parsed = BatchCodec::parsePayload($payload);
         $values = $this->validatedValues($parsed['values'], (string) ($payload['symbology'] ?? 'code128'));
         $symbology = strtolower(trim((string) ($payload['symbology'] ?? 'code128')));
+        $requestedRenderMode = strtolower(trim((string) ($payload['zebraMode'] ?? self::ZEBRA_RENDER_AUTO)));
 
         if (count($values) !== 12) {
             throw new RuntimeException('Zebra page requires exactly 12 barcodes.');
+        }
+
+        if (!in_array($requestedRenderMode, [
+            self::ZEBRA_RENDER_AUTO,
+            self::ZEBRA_RENDER_Z64,
+            self::ZEBRA_RENDER_NATIVE,
+        ], true)) {
+            throw new RuntimeException('zebraMode must be auto, z64, or native.');
         }
 
         $queue = $this->queueName(self::PRINTER_ZEBRA);
@@ -110,7 +128,7 @@ final class PrintWorkflowService
         }
 
         $file = sprintf('%s/%s.zpl', $tmpDir, uniqid('zebra_12_', true));
-        $zpl = $this->buildZebra12UpZpl($values, $symbology);
+        [$zpl, $effectiveRenderMode] = $this->buildZebraSubmissionZpl($values, $symbology, $requestedRenderMode);
         file_put_contents($file, $zpl);
 
         $jobOutput = $this->commands->mustRun([
@@ -123,7 +141,7 @@ final class PrintWorkflowService
             $file,
         ]);
 
-        return $this->persistAndBackup(
+        $result = $this->persistAndBackup(
             printerKey: self::PRINTER_ZEBRA,
             symbology: $symbology,
             values: $values,
@@ -132,6 +150,9 @@ final class PrintWorkflowService
             printerQueue: $queue,
             file: $file
         );
+        $result['zebraRenderMode'] = $effectiveRenderMode;
+
+        return $result;
     }
 
     /**
@@ -341,6 +362,32 @@ final class PrintWorkflowService
     private function escapeZpl(string $value): string
     {
         return str_replace(['^', '~'], [' ', ' '], $value);
+    }
+
+    /**
+     * @param list<string> $values
+     * @return array{0:string,1:string}
+     */
+    private function buildZebraSubmissionZpl(array $values, string $symbology, string $requestedRenderMode): array
+    {
+        $symbology = strtolower(trim($symbology));
+
+        if ($requestedRenderMode === self::ZEBRA_RENDER_NATIVE) {
+            return [$this->buildZebra12UpZpl($values, $symbology), self::ZEBRA_RENDER_NATIVE];
+        }
+
+        if ($requestedRenderMode === self::ZEBRA_RENDER_Z64) {
+            if ($symbology === 'qr') {
+                throw new RuntimeException('Raster Z64 mode does not support QR yet. Use zebraMode=native or zebraMode=auto.');
+            }
+            return [$this->zplRaster->build12UpZ64($values, $symbology), self::ZEBRA_RENDER_Z64];
+        }
+
+        if ($symbology === 'qr') {
+            return [$this->buildZebra12UpZpl($values, $symbology), self::ZEBRA_RENDER_NATIVE];
+        }
+
+        return [$this->zplRaster->build12UpZ64($values, $symbology), self::ZEBRA_RENDER_Z64];
     }
 
     /** @param array<string,mixed> $payload */

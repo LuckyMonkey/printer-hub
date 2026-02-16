@@ -15,7 +15,7 @@ Printer Hub is a single-container service orchestrated by `supervisord`.
 2. UI sends request to `/api/print/<printer>`.
 3. PHP validates count/symbology/input.
 4. PHP renders output:
-   - Zebra: ZPL 12-up
+   - Zebra: ZPL 12-up (native commands or GD raster -> Z64 `^GFA`)
    - Brother/HP: PDF via Python `reportlab`
 5. PHP submits print job through CUPS (`lp`).
 6. PHP persists batch in Postgres/PostGIS.
@@ -34,6 +34,7 @@ Table: `barcode_batches`
 ## Code Map
 - API router: `app/src/ApiController.php`
 - Workflow engine: `app/src/PrintWorkflowService.php`
+- Zebra raster encoder: `app/src/ZplRasterService.php`
 - CUPS service layer: `app/src/PrinterService.php`, `app/src/JobService.php`
 - DB layer: `app/src/Database.php`, `app/src/BatchRepository.php`
 - Input normalization: `app/src/BatchCodec.php`

@@ -97,6 +97,7 @@ function PrinterPage({ printer, config, onBack }) {
   const [batches, setBatches] = useState([]);
   const [form, setForm] = useState({
     symbology: 'code128',
+    zebraMode: 'auto',
     title: printer.defaultTitle,
     copies: 1,
     input: '',
@@ -118,6 +119,7 @@ function PrinterPage({ printer, config, onBack }) {
     loadBatches();
     setForm({
       symbology: 'code128',
+      zebraMode: 'auto',
       title: printer.defaultTitle,
       copies: 1,
       input: '',
@@ -143,6 +145,9 @@ function PrinterPage({ printer, config, onBack }) {
         copies: Number(form.copies),
         input: form.input,
       };
+      if (printer.key === 'zebra') {
+        payload.zebraMode = form.zebraMode;
+      }
 
       const result = await api(printer.endpoint, {
         method: 'POST',
@@ -178,6 +183,20 @@ function PrinterPage({ printer, config, onBack }) {
             <option key={option} value={option}>{option.toUpperCase()}</option>
           ))}
         </select>
+
+        {printer.key === 'zebra' && (
+          <>
+            <label>Zebra Render</label>
+            <select
+              value={form.zebraMode}
+              onChange={(e) => setForm((prev) => ({ ...prev, zebraMode: e.target.value }))}
+            >
+              {(config?.zebraRenderModes || ['auto', 'z64', 'native']).map((mode) => (
+                <option key={mode} value={mode}>{mode.toUpperCase()}</option>
+              ))}
+            </select>
+          </>
+        )}
 
         <label>Job Title</label>
         <input

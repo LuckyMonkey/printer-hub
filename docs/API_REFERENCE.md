@@ -41,6 +41,9 @@ Returns recent persisted batches.
 ### POST `/api/print/zebra`
 - Requires exactly 12 values
 - Uses 4x6 ZPL 12-up flow (`lp -o raw`)
+- Optional `zebraMode`: `auto` (default), `z64`, `native`
+- `auto` behavior: `code128/upc` render as raster `^GFA ... :Z64:`, `qr` falls back to native ZPL
+- Response includes `zebraRenderMode` with the effective mode used.
 
 ### POST `/api/print/hp`
 - Requires exactly 30 values
@@ -50,6 +53,7 @@ Common body:
 ```json
 {
   "symbology": "code128",
+  "zebraMode": "auto",
   "title": "job-name",
   "copies": 1,
   "input": "A1\rA2\nA3,A4"

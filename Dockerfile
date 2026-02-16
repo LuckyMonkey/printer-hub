@@ -28,7 +28,12 @@ RUN apt-get update \
       postgresql-15-postgis-3 \
       postgresql-15-postgis-3-scripts \
       ca-certificates \
+      libfreetype6-dev \
+      libjpeg62-turbo-dev \
+      libpng-dev \
     && docker-php-ext-install pdo_pgsql \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install gd \
     && rm -rf /var/lib/apt/lists/*
 
 RUN sed -ri "s|^;?clear_env\s*=.*|clear_env = no|" /usr/local/etc/php-fpm.d/www.conf

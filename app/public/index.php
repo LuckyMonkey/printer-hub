@@ -9,6 +9,7 @@ use PrinterHub\JobService;
 use PrinterHub\PrintWorkflowService;
 use PrinterHub\PrinterService;
 use PrinterHub\SheetsBackupService;
+use PrinterHub\ZplRasterService;
 
 require_once __DIR__ . '/../src/CommandRunner.php';
 require_once __DIR__ . '/../src/PrinterService.php';
@@ -17,6 +18,7 @@ require_once __DIR__ . '/../src/BatchCodec.php';
 require_once __DIR__ . '/../src/Database.php';
 require_once __DIR__ . '/../src/BatchRepository.php';
 require_once __DIR__ . '/../src/SheetsBackupService.php';
+require_once __DIR__ . '/../src/ZplRasterService.php';
 require_once __DIR__ . '/../src/PrintWorkflowService.php';
 require_once __DIR__ . '/../src/ApiController.php';
 
@@ -42,7 +44,8 @@ if (str_starts_with($path, '/api/')) {
     $workflow = new PrintWorkflowService(
         $commands,
         $batches,
-        new SheetsBackupService(getenv('GAPPS_WEBHOOK_URL') ?: null)
+        new SheetsBackupService(getenv('GAPPS_WEBHOOK_URL') ?: null),
+        new ZplRasterService()
     );
 
     $controller = new ApiController(
