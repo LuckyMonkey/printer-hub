@@ -11,6 +11,11 @@ services:
     ports:
       - "8088:80"
       - "8631:631"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.printer-hub.rule=Host(`printer.home.arpa`)
+      - traefik.http.routers.printer-hub.entrypoints=web
+      - traefik.http.services.printer-hub.loadbalancer.server.port=80
     environment:
       TZ: America/New_York
       DB_HOST: 127.0.0.1
