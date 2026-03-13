@@ -103,6 +103,7 @@ final class PrinterRegistry
             }
 
             $capabilities = is_array($printer['capabilities'] ?? null) ? $printer['capabilities'] : [];
+            $batch = is_array($printer['batch'] ?? null) ? $printer['batch'] : [];
 
             $result[] = [
                 'printerId' => (string) $printerId,
@@ -116,6 +117,17 @@ final class PrinterRegistry
                     'barcodeTypes' => array_values(array_map('strval', (array) ($capabilities['barcodeTypes'] ?? ['CODE128']))),
                     'maxBarcodeLength' => (int) ($capabilities['maxBarcodeLength'] ?? 120),
                     'maxTextLine1Length' => (int) ($capabilities['maxTextLine1Length'] ?? 120),
+                ],
+                'batch' => [
+                    'enabled' => (bool) ($batch['enabled'] ?? false),
+                    'chunkSize' => max(1, (int) ($batch['chunkSize'] ?? 1)),
+                    'maxValues' => max(1, (int) ($batch['maxValues'] ?? 120)),
+                    'defaultBarcodeType' => (string) ($batch['defaultBarcodeType'] ?? (($capabilities['barcodeTypes'][0] ?? 'CODE128'))),
+                    'recommendedBarcodeTypes' => array_values(array_map('strval', (array) ($batch['recommendedBarcodeTypes'] ?? []))),
+                    'title' => (string) ($batch['title'] ?? ''),
+                    'helperText' => (string) ($batch['helperText'] ?? ''),
+                    'inputHint' => (string) ($batch['inputHint'] ?? ''),
+                    'upcaHint' => (string) ($batch['upcaHint'] ?? ''),
                 ],
             ];
         }

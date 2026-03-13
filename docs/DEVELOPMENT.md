@@ -23,6 +23,17 @@ npm run dev
   ```bash
   php app/tests/BrotherTemplateClientSnapshotTest.php
   ```
+- Zebra label batch rules:
+  ```bash
+  php app/tests/ZebraLabelServiceTest.php
+  php app/tests/ZebraQrLabelServiceTest.php
+  php app/tests/PrinterRegistryTest.php
+  ```
+- UI production build:
+  ```bash
+  cd ui
+  npm run build
+  ```
 - Full container rebuild:
   ```bash
   docker-compose up -d --build

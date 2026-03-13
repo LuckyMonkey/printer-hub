@@ -14,6 +14,7 @@ final class MultiPrinterPrintService
         private readonly RawSocketTransport $socketTransport,
         private readonly CupsTransport $cupsTransport,
         private readonly ZebraLabelService $zebra,
+        private readonly ZebraQrLabelService $zebraQr,
         private readonly BrotherTemplateClient $brother,
         private readonly HpLabelService $hp
     ) {
@@ -201,7 +202,9 @@ final class MultiPrinterPrintService
         int $copies,
         string $jobId
     ): array {
-        $zpl = $this->zebra->buildZpl($labelType, $barcodeType, $barcodeValue, $textLine1);
+        $zpl = $barcodeType === 'QR'
+            ? $this->zebraQr->buildZpl($labelType, $barcodeValue, $textLine1)
+            : $this->zebra->buildZpl($labelType, $barcodeType, $barcodeValue, $textLine1);
         $transport = strtolower((string) ($printer['transport'] ?? 'cups'));
 
         if ($transport === 'socket') {
@@ -413,6 +416,22 @@ final class MultiPrinterPrintService
             throw new RuntimeException(sprintf('textLine1 exceeds max length (%d).', $maxText));
         }
 
+        if ($labelType === 'business-card') {
+            if ($barcodeType !== 'QR') {
+                throw new RuntimeException('Business card Zebra labels require barcodeType QR.');
+            }
+
+            if ($textLine1 === '') {
+                throw new RuntimeException('Business card Zebra labels require textLine1 for the name.');
+            }
+
+            $normalizedUrl = $this->normalizeBusinessCardUrl($barcodeValue);
+            if ($normalizedUrl === null) {
+                throw new RuntimeException('Business card Zebra labels require a valid URL in barcodeValue.');
+            }
+            $barcodeValue = $normalizedUrl;
+        }
+
         $copies = (int) ($payload['copies'] ?? 1);
         if ($copies < 1 || $copies > 250) {
             throw new RuntimeException('copies must be between 1 and 250.');
@@ -431,5 +450,25 @@ final class MultiPrinterPrintService
     private function generateJobId(): string
     {
         return bin2hex(random_bytes(8));
+    }
+
+    private function normalizeBusinessCardUrl(string $value): ?string
+    {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if (!preg_match('#^[a-z][a-z0-9+\-.]*://#i', $trimmed)) {
+            $trimmed = preg_match('/(^|\.)local(?::\d+)?(\/|$)/i', $trimmed) === 1
+                || preg_match('/^localhost(?::\d+)?(\/|$)/i', $trimmed) === 1
+                || preg_match('/^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(\/|$)/', $trimmed) === 1
+                || preg_match('/:\d+(\/|$)/', $trimmed) === 1
+                ? 'http://' . $trimmed
+                : 'https://' . $trimmed;
+        }
+
+        $validated = filter_var($trimmed, FILTER_VALIDATE_URL);
+        return is_string($validated) ? $validated : null;
     }
 }

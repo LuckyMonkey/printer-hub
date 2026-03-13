@@ -48,6 +48,31 @@ Add queues via:
 - Ensure Zebra queue name matches `PRINTER_ZEBRA_QUEUE`.
 - Verify USB mapping `/dev/bus/usb` works on host.
 
+## Zebra QR labels do not print
+- QR labels now use the raster QR path, so both `gd` and `qrencode` must exist in the container image.
+- Rebuild the container after QR-related code changes:
+  ```bash
+  docker-compose up -d --build
+  ```
+- Run the QR service test inside the container:
+  ```bash
+  docker exec printer-hub php /var/www/app/tests/ZebraQrLabelServiceTest.php
+  ```
+- If a `business-card` label fails, confirm `barcodeValue` is a real URL and `textLine1` is not blank.
+
+## Zebra PNG job hangs in CUPS or nothing prints
+- If `lpstat -p zebra_zp505 -l` shows `Waiting for printer to become available`, the CUPS USB backend may be wedged.
+- Prefer the built-in PNG endpoint with direct USB enabled:
+  ```bash
+  curl -sS -X POST http://localhost:8088/api/print/zebra/image \
+    -F 'file=@/path/to/label.png'
+  ```
+- Confirm `ZEBRA_IMAGE_TRANSPORT=direct-usb` and `ZEBRA_USB_DEVICE=/dev/usb/lp1`.
+- Check the device exists in the container:
+  ```bash
+  docker exec printer-hub sh -lc 'ls -l /dev/usb/lp*'
+  ```
+
 ## Brother or HP print misalignment
 - Validate page/stock selection on physical printer.
 - Ensure correct URI and model.

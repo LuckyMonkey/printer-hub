@@ -49,6 +49,29 @@ async function api(path, options = {}) {
   return data;
 }
 
+function normalizeQrLinkUrl(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  if (/^[a-z][a-z0-9+\-.]*:\/\//i.test(value)) {
+    try {
+      return new URL(value).toString();
+    } catch {
+      return '';
+    }
+  }
+
+  const prefersHttp = /(^|\.)local(?::\d+)?(\/|$)/i.test(value)
+    || /^localhost(?::\d+)?(\/|$)/i.test(value)
+    || /^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(\/|$)/.test(value)
+    || /:\d+(\/|$)/.test(value);
+
+  try {
+    return new URL(`${prefersHttp ? 'http' : 'https'}://${value}`).toString();
+  } catch {
+    return '';
+  }
+}
+
 function formatStatus(status) {
   if (status === 'sent') return 'printed';
   if (status === 'sending') return 'sending';
@@ -81,7 +104,147 @@ function validateForm(printer, form) {
     return `Text line 1 exceeds max length (${maxTextLength}).`;
   }
 
+  if (printer?.printerId === 'zebra-zp505' && form.labelType === 'business-card') {
+    if (form.barcodeType !== 'QR') {
+      return 'Business card Zebra labels require barcode type QR.';
+    }
+    if (!(form.textLine1 || '').trim()) {
+      return 'Business card Zebra labels require a name in Text Line 1.';
+    }
+    if (!normalizeQrLinkUrl(form.barcodeValue)) {
+      return 'Business card Zebra labels require a valid QR link URL.';
+    }
+  }
+
   return null;
+}
+
+function splitBatchValues(raw) {
+  return String(raw || '')
+    .split(/[\r\n,]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function normalizeUpcaValue(value) {
+  if (!/^\d{11,12}$/.test(value)) {
+    return null;
+  }
+
+  if (value.length === 12) {
+    return value;
+  }
+
+  let odd = 0;
+  let even = 0;
+  for (let index = 0; index < 11; index += 1) {
+    const digit = Number(value[index]);
+    if (index % 2 === 0) {
+      odd += digit;
+    } else {
+      even += digit;
+    }
+  }
+
+  const sum = (odd * 3) + even;
+  const checkDigit = (10 - (sum % 10)) % 10;
+  return `${value}${checkDigit}`;
+}
+
+function pickDefaultBatchType(printer) {
+  const supported = Array.isArray(printer?.capabilities?.barcodeTypes)
+    ? printer.capabilities.barcodeTypes
+    : [];
+  const preferred = String(printer?.batch?.defaultBarcodeType || '').trim();
+  if (preferred && supported.includes(preferred)) {
+    return preferred;
+  }
+  return supported[0] || 'CODE128';
+}
+
+function recommendedBatchTypes(printer) {
+  const supported = Array.isArray(printer?.capabilities?.barcodeTypes)
+    ? printer.capabilities.barcodeTypes
+    : [];
+  const preferred = Array.isArray(printer?.batch?.recommendedBarcodeTypes)
+    ? printer.batch.recommendedBarcodeTypes.filter((type) => supported.includes(type))
+    : [];
+
+  return [...new Set([...preferred, ...supported])];
+}
+
+function analyzeBatchInput(input, barcodeType, batchConfig) {
+  const values = splitBatchValues(input);
+  const maxValues = Math.max(1, Number(batchConfig?.maxValues || 120));
+  const chunkSize = Math.max(1, Number(batchConfig?.chunkSize || 1));
+  const invalidValues = [];
+  const normalizedValues = values.map((value) => {
+    if (barcodeType !== 'UPCA') {
+      return value;
+    }
+
+    const normalized = normalizeUpcaValue(value);
+    if (!normalized) {
+      invalidValues.push(value);
+      return value;
+    }
+
+    return normalized;
+  });
+
+  const counts = new Map();
+  for (const value of normalizedValues) {
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+
+  const duplicates = [...counts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([value, count]) => ({ value, count }));
+
+  const printableValues = barcodeType === 'UPCA' ? normalizedValues : values;
+  const count = printableValues.length;
+  const chunkCount = count === 0 ? 0 : Math.ceil(count / chunkSize);
+  const remainder = count === 0 ? 0 : count - ((chunkCount - 1) * chunkSize);
+
+  return {
+    values,
+    printableValues,
+    invalidValues,
+    duplicates,
+    count,
+    maxValues,
+    chunkSize,
+    chunkCount,
+    remainder,
+    tooMany: count > maxValues,
+    previewValues: printableValues.slice(0, 8),
+    hiddenPreviewCount: Math.max(printableValues.length - 8, 0),
+    submitInput: printableValues.join('\n'),
+  };
+}
+
+function batchCapabilityLabel(printer) {
+  const chunkSize = Math.max(1, Number(printer?.batch?.chunkSize || 1));
+  if (printer?.printerId === 'zebra-zp505') {
+    return `${chunkSize} labels per Zebra sheet`;
+  }
+  if (printer?.printerId === 'hp-envy-5055') {
+    return `${chunkSize} labels per HP page`;
+  }
+  return 'Sequential single-label queue';
+}
+
+function batchActionLabel(printer, batchType) {
+  if (printer?.printerId === 'zebra-zp505' && batchType === 'UPCA') {
+    return 'Print Zebra UPC Batch';
+  }
+  if (printer?.printerId === 'zebra-zp505') {
+    return 'Print Zebra Batch';
+  }
+  if (printer?.printerId === 'hp-envy-5055') {
+    return 'Print HP Batch';
+  }
+  return 'Save + Print Batch';
 }
 
 function spriteForPrinter(printerId) {
@@ -148,7 +311,7 @@ function PrinterList({ printers, cupsQueues, onOpen }) {
     <section className={PANEL_CLASS}>
       <h2 className="font-display text-5xl leading-none text-[#1d1d1d]">Printer Pages</h2>
       <p className="mt-4 max-w-4xl text-base text-[#2a2a2a]">
-        Open a printer page to choose label type, provide barcode/text input, run a test print, and send production print jobs.
+        Open a printer page to choose label type, provide barcode input, run a test print, and send production jobs.
       </p>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-3">
@@ -163,6 +326,7 @@ function PrinterList({ printers, cupsQueues, onOpen }) {
               <span className="text-xl font-semibold text-[#181818]">{printer.displayName}</span>
             </span>
             <span className="mt-1 block text-sm text-[#2e2e2e]">Transport: {printer.transport}</span>
+            <span className="mt-2 block text-sm text-[#22456f]">Batch: {batchCapabilityLabel(printer)}</span>
             <span className="mt-3 flex items-center gap-2 text-xs font-mono text-[#24333f]">
               <SpriteIcon
                 frame={connectionSprite(printer, queueConnected(printer, cupsQueues))}
@@ -188,8 +352,13 @@ function PrinterList({ printers, cupsQueues, onOpen }) {
 function PrinterPage({ printer, cupsQueues, onBack }) {
   const defaultLabelType = printer.labelTypes[0]?.id || 'waco-id';
   const defaultBarcodeType = printer.capabilities?.barcodeTypes?.[0] || 'CODE128';
+  const defaultBatchType = pickDefaultBatchType(printer);
+  const batchEnabled = printer?.batch?.enabled !== false;
+  const batchTypes = recommendedBatchTypes(printer);
+  const batchChunkSize = Math.max(1, Number(printer?.batch?.chunkSize || 1));
+  const batchMaxValues = Math.max(1, Number(printer?.batch?.maxValues || 120));
   const hasQueue = queueConnected(printer, cupsQueues);
-  const singleModeEnabled = printer.printerId === 'brother-ql820';
+  const singleModeEnabled = printer.printerId === 'brother-ql820' || printer.printerId === 'zebra-zp505';
 
   const [form, setForm] = useState({
     labelType: defaultLabelType,
@@ -203,7 +372,7 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
   const [job, setJob] = useState(null);
   const [printing, setPrinting] = useState(false);
   const [batchInput, setBatchInput] = useState('');
-  const [batchType, setBatchType] = useState(defaultBarcodeType);
+  const [batchType, setBatchType] = useState(defaultBatchType);
   const [batchMessage, setBatchMessage] = useState('Batch ready.');
   const [batchPrinting, setBatchPrinting] = useState(false);
   const [batchSummary, setBatchSummary] = useState(null);
@@ -219,10 +388,21 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
     setMessage('Ready.');
     setJob(null);
     setBatchInput('');
-    setBatchType(defaultBarcodeType);
+    setBatchType(defaultBatchType);
     setBatchMessage('Batch ready.');
     setBatchSummary(null);
-  }, [printer.printerId, defaultLabelType, defaultBarcodeType]);
+  }, [printer.printerId, defaultLabelType, defaultBarcodeType, defaultBatchType]);
+
+  useEffect(() => {
+    if (printer.printerId === 'zebra-zp505' && form.labelType === 'business-card' && form.barcodeType !== 'QR') {
+      setForm((prev) => ({ ...prev, barcodeType: 'QR' }));
+    }
+  }, [printer.printerId, form.labelType, form.barcodeType]);
+
+  const batchAnalysis = useMemo(
+    () => analyzeBatchInput(batchInput, batchType, printer.batch),
+    [batchInput, batchType, printer.batch]
+  );
 
   async function pollJob(jobId) {
     let attempts = 0;
@@ -258,7 +438,9 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
       printerId: printer.printerId,
       labelType: form.labelType,
       barcodeType: form.barcodeType,
-      barcodeValue: form.barcodeValue.trim(),
+      barcodeValue: form.labelType === 'business-card' && printer.printerId === 'zebra-zp505'
+        ? normalizeQrLinkUrl(form.barcodeValue)
+        : form.barcodeValue.trim(),
       textLine1: form.textLine1.trim(),
       copies: Number(form.copies),
     };
@@ -299,14 +481,23 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
   }
 
   async function runTestPrint() {
-    const sample = {
-      printerId: printer.printerId,
-      labelType: defaultLabelType,
-      barcodeType: 'CODE128',
-      barcodeValue: '051000568235',
-      textLine1: 'Spaghettios',
-      copies: 1,
-    };
+    const sample = printer.printerId === 'zebra-zp505'
+      ? {
+          printerId: printer.printerId,
+          labelType: 'business-card',
+          barcodeType: 'QR',
+          barcodeValue: 'https://fridge.local/?go=printers',
+          textLine1: 'Charlie',
+          copies: 1,
+        }
+      : {
+          printerId: printer.printerId,
+          labelType: defaultLabelType,
+          barcodeType: 'CODE128',
+          barcodeValue: '051000568235',
+          textLine1: 'Spaghettios',
+          copies: 1,
+        };
 
     setForm((prev) => ({
       ...prev,
@@ -323,15 +514,23 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
   async function submitBatch(event) {
     event.preventDefault();
 
-    const raw = batchInput.trim();
-    if (!raw) {
+    if (!batchEnabled) {
+      setBatchMessage('Batch mode is unavailable for this printer.');
+      return;
+    }
+
+    if (batchAnalysis.count === 0) {
       setBatchMessage('Batch barcode data is required.');
       return;
     }
 
-    const values = raw.split(/[\r\n,]+/).map((v) => v.trim()).filter(Boolean);
-    if (values.length < 1 || values.length > 120) {
-      setBatchMessage('Batch must contain 1 to 120 barcode values.');
+    if (batchAnalysis.tooMany) {
+      setBatchMessage(`Batch must contain 1 to ${batchMaxValues} barcode values.`);
+      return;
+    }
+
+    if (batchAnalysis.invalidValues.length > 0) {
+      setBatchMessage(`Fix invalid UPC-A values before printing: ${batchAnalysis.invalidValues.slice(0, 3).join(', ')}`);
       return;
     }
 
@@ -346,7 +545,7 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
           printerId: printer.printerId,
           labelType: form.labelType,
           barcodeType: batchType,
-          input: raw,
+          input: batchAnalysis.submitInput,
         }),
       });
 
@@ -360,6 +559,7 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
   }
 
   const statusText = useMemo(() => formatStatus(job?.status || ''), [job]);
+  const zebraBusinessCardMode = printer.printerId === 'zebra-zp505' && form.labelType === 'business-card';
   const statusFrame = useMemo(() => {
     if (job?.status === 'error') {
       return connectionSprite(printer, false);
@@ -372,6 +572,30 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
     }
     return SPRITE_FRAME.scanner;
   }, [job?.status, hasQueue, printer]);
+
+  const batchReady = batchEnabled
+    && batchAnalysis.count > 0
+    && !batchAnalysis.tooMany
+    && batchAnalysis.invalidValues.length === 0;
+
+  const batchReadinessMessage = (() => {
+    if (!batchEnabled) {
+      return 'Batch mode is disabled for this printer configuration.';
+    }
+    if (batchAnalysis.count === 0) {
+      return printer?.batch?.helperText || 'Paste barcode values to prepare a batch.';
+    }
+    if (batchAnalysis.tooMany) {
+      return `Reduce the list to ${batchMaxValues} values or fewer.`;
+    }
+    if (batchAnalysis.invalidValues.length > 0) {
+      return `Found ${batchAnalysis.invalidValues.length} invalid UPC-A value${batchAnalysis.invalidValues.length === 1 ? '' : 's'}.`;
+    }
+    if (batchAnalysis.duplicates.length > 0) {
+      return `Ready to print, but ${batchAnalysis.duplicates.length} value${batchAnalysis.duplicates.length === 1 ? ' is' : 's are'} duplicated.`;
+    }
+    return `Ready: ${batchAnalysis.count} value${batchAnalysis.count === 1 ? '' : 's'} across ${batchAnalysis.chunkCount} batch ${batchAnalysis.chunkCount === 1 ? 'job' : 'jobs'}.`;
+  })();
 
   return (
     <section className={PANEL_CLASS}>
@@ -395,6 +619,21 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
             : `Connection unavailable: socket host "${printer.host || 'unset'}:${printer.port || 9100}"`)}
       </p>
 
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <div className="retro-window p-4">
+          <p className={LABEL_CLASS}>Batch Shape</p>
+          <p className="mt-2 text-base text-[#1d1d1d]">{batchCapabilityLabel(printer)}</p>
+        </div>
+        <div className="retro-window p-4">
+          <p className={LABEL_CLASS}>Accepted Symbologies</p>
+          <p className="mt-2 font-mono text-sm text-[#1d1d1d]">{printer.capabilities.barcodeTypes.join(', ')}</p>
+        </div>
+        <div className="retro-window p-4">
+          <p className={LABEL_CLASS}>Batch Limit</p>
+          <p className="mt-2 text-base text-[#1d1d1d]">Up to {batchMaxValues} values per submission</p>
+        </div>
+      </div>
+
       {singleModeEnabled ? (
         <>
           <form className="mt-8 grid gap-7 md:grid-cols-2" onSubmit={onSubmit}>
@@ -417,34 +656,44 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
                 className={INPUT_CLASS}
                 value={form.barcodeType}
                 onChange={(e) => setForm((prev) => ({ ...prev, barcodeType: e.target.value }))}
+                disabled={zebraBusinessCardMode}
               >
                 {printer.capabilities.barcodeTypes.map((type) => (
                   <option key={type} value={type}>{type}</option>
                 ))}
               </select>
+              {zebraBusinessCardMode ? (
+                <p className="mt-2 text-xs text-[#2d2d2d]">Business cards lock Zebra into QR mode so the link renders reliably.</p>
+              ) : null}
             </div>
 
             <div>
               <label className={`${LABEL_CLASS} flex items-center gap-2`}>
                 <SpriteIcon frame={SPRITE_FRAME.scanner} label="Barcode scanner" className="scale-90" />
-                Barcode Value
+                {zebraBusinessCardMode ? 'QR Link URL' : 'Barcode Value'}
               </label>
               <input
                 className={INPUT_CLASS}
                 value={form.barcodeValue}
                 onChange={(e) => setForm((prev) => ({ ...prev, barcodeValue: e.target.value }))}
-                placeholder="Required"
+                placeholder={zebraBusinessCardMode ? 'https://example.com/card' : 'Required'}
               />
+              {zebraBusinessCardMode ? (
+                <p className="mt-2 text-xs text-[#2d2d2d]">Use a full link or a bare host/path. The app will normalize it before print.</p>
+              ) : null}
             </div>
 
             <div>
-              <label className={LABEL_CLASS}>Text Line 1 (optional)</label>
+              <label className={LABEL_CLASS}>{zebraBusinessCardMode ? 'Name (required)' : 'Text Line 1 (optional)'}</label>
               <input
                 className={INPUT_CLASS}
                 value={form.textLine1}
                 onChange={(e) => setForm((prev) => ({ ...prev, textLine1: e.target.value }))}
-                placeholder="Optional"
+                placeholder={zebraBusinessCardMode ? 'Charlie' : 'Optional'}
               />
+              {zebraBusinessCardMode ? (
+                <p className="mt-2 text-xs text-[#2d2d2d]">This is the person or business name printed beside the QR.</p>
+              ) : null}
             </div>
 
             <div>
@@ -484,65 +733,209 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
           </div>
         </>
       ) : (
-        <div className="retro-window mt-8 p-5 sm:p-6 text-sm text-[#222]">
-          This printer uses batch-only mode. Paste CSV/newline data below to print sheets.
+        <div className="retro-window mt-8 p-5 sm:p-6">
+          <h3 className="font-display text-4xl leading-none text-[#1b1b1b]">
+            {printer?.batch?.title || 'Batch Print'}
+          </h3>
+          <p className="mt-3 text-sm text-[#222]">
+            {printer?.batch?.helperText || 'Paste barcode data below to print a batch.'}
+          </p>
         </div>
       )}
 
-      <form className="retro-window mt-8 p-5 sm:p-6" onSubmit={submitBatch}>
-        <h3 className="font-display text-4xl leading-none text-[#1b1b1b]">Batch Print</h3>
-        <p className="mt-3 text-sm text-[#2a2a2a]">
-          One field only: paste CSV/newline barcode data. Batch type cannot be mixed. Limit: 1-120 values.
-        </p>
+      <form className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.95fr)]" onSubmit={submitBatch}>
+        <div className="retro-window p-5 sm:p-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="font-display text-4xl leading-none text-[#1b1b1b]">
+              {printer?.batch?.title || 'Batch Print'}
+            </h3>
+            {printer.printerId === 'zebra-zp505' ? (
+              <span className="border-2 border-[#1f4688] bg-[#dce8ff] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#1a3563]">
+                Zebra Lane
+              </span>
+            ) : null}
+          </div>
 
-        <div className="mt-5 grid gap-6 md:grid-cols-2">
-          <div>
-            <label className={LABEL_CLASS}>Batch Label Type</label>
-            <select
-              className={INPUT_CLASS}
-              value={form.labelType}
-              onChange={(e) => setForm((prev) => ({ ...prev, labelType: e.target.value }))}
-            >
-              {printer.labelTypes.map((item) => (
-                <option key={item.id} value={item.id}>{item.label} ({item.id})</option>
-              ))}
-            </select>
+          <p className="mt-3 text-sm text-[#2a2a2a]">
+            {printer?.batch?.helperText || 'One field only: paste CSV or newline barcode data. Batch type cannot be mixed.'}
+          </p>
+
+          <div className="mt-5 grid gap-6 md:grid-cols-2">
+            <div>
+              <label className={LABEL_CLASS}>Batch Label Type</label>
+              <select
+                className={INPUT_CLASS}
+                value={form.labelType}
+                onChange={(e) => setForm((prev) => ({ ...prev, labelType: e.target.value }))}
+              >
+                {printer.labelTypes.map((item) => (
+                  <option key={item.id} value={item.id}>{item.label} ({item.id})</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={LABEL_CLASS}>Batch Barcode Type</label>
+              <select
+                className={INPUT_CLASS}
+                value={batchType}
+                onChange={(e) => setBatchType(e.target.value)}
+              >
+                {batchTypes.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div>
-            <label className={LABEL_CLASS}>Batch Barcode Type</label>
-            <select
-              className={INPUT_CLASS}
-              value={batchType}
-              onChange={(e) => setBatchType(e.target.value)}
-            >
-              {printer.capabilities.barcodeTypes.map((type) => (
-                <option key={type} value={type}>{type}</option>
+
+          <div className="mt-5">
+            <p className={LABEL_CLASS}>Quick Picks</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {batchTypes.map((type) => (
+                <button
+                  key={type}
+                  className={SUBTLE_BUTTON_CLASS}
+                  type="button"
+                  onClick={() => setBatchType(type)}
+                  disabled={batchPrinting || batchType === type}
+                >
+                  {type === 'UPCA' ? 'UPC-A' : type}
+                </button>
               ))}
-            </select>
+              <button
+                className={SUBTLE_BUTTON_CLASS}
+                type="button"
+                onClick={() => setBatchInput('036000291452\n012345678905\n051000012517')}
+                disabled={batchPrinting}
+              >
+                Load Sample
+              </button>
+              <button
+                className={SUBTLE_BUTTON_CLASS}
+                type="button"
+                onClick={() => setBatchInput('')}
+                disabled={batchPrinting || batchInput.trim() === ''}
+              >
+                Clear
+              </button>
+            </div>
           </div>
-          <div className="flex items-end md:justify-end">
-            <button className={BUTTON_CLASS} type="submit" disabled={batchPrinting}>
-              Save + Print Batch
+
+          <div className="mt-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <label className={`${LABEL_CLASS} flex items-center gap-2`}>
+                <SpriteIcon frame={SPRITE_FRAME.scanner} label="Barcode scanner" className="scale-90" />
+                Batch Barcode Data
+              </label>
+              <span className="text-[11px] font-mono uppercase tracking-[0.18em] text-[#21466e]">
+                {batchAnalysis.count}/{batchMaxValues} values
+              </span>
+            </div>
+            <textarea
+              className={`${INPUT_CLASS} min-h-56`}
+              value={batchInput}
+              onChange={(e) => setBatchInput(e.target.value)}
+              placeholder={'036000291452\n036000291469\nor comma separated values'}
+            />
+            <div className="mt-3 flex flex-wrap gap-3 text-xs text-[#2b2b2b]">
+              <span>{printer?.batch?.inputHint || 'Newlines and commas are both accepted.'}</span>
+              {batchType === 'UPCA' ? (
+                <span>{printer?.batch?.upcaHint || 'UPC-A accepts 11 or 12 digits.'}</span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <button
+              className={BUTTON_CLASS}
+              type="submit"
+              disabled={batchPrinting || !batchReady}
+            >
+              {batchActionLabel(printer, batchType)}
             </button>
+            <span className="text-sm text-[#2b2b2b]">
+              {batchAnalysis.chunkCount > 0
+                ? `${batchAnalysis.chunkCount} batch ${batchAnalysis.chunkCount === 1 ? 'job' : 'jobs'} at ${batchChunkSize} value${batchChunkSize === 1 ? '' : 's'} each`
+                : 'Paste values to calculate batch jobs'}
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-2 font-mono text-xs text-[#2b2b2b] sm:grid-cols-2">
+            <span>{batchMessage}</span>
+            <span>Batch ID: {batchSummary?.batchId ?? '-'}</span>
+            <span>Saved Count: {batchSummary?.count ?? '-'}</span>
+            <span>Sent/Error: {(batchSummary?.sentCount ?? '-')}/{(batchSummary?.errorCount ?? '-')}</span>
           </div>
         </div>
 
-        <div className="mt-5">
-          <label className={LABEL_CLASS}>Batch Barcode Data</label>
-          <textarea
-            className={`${INPUT_CLASS} min-h-40`}
-            value={batchInput}
-            onChange={(e) => setBatchInput(e.target.value)}
-            placeholder={'051000568235,051000568236\nor newline separated values'}
-          />
-        </div>
+        <aside className="retro-window p-5 sm:p-6">
+          <h3 className="font-display text-4xl leading-none text-[#1b1b1b]">Batch Summary</h3>
 
-        <div className="mt-4 grid gap-2 font-mono text-xs text-[#2b2b2b] sm:grid-cols-2">
-          <span>{batchMessage}</span>
-          <span>Batch ID: {batchSummary?.batchId ?? '-'}</span>
-          <span>Saved Count: {batchSummary?.count ?? '-'}</span>
-          <span>Sent/Error: {(batchSummary?.sentCount ?? '-')}/{(batchSummary?.errorCount ?? '-')}</span>
-        </div>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="border-2 border-[#a1a1a1] bg-[#ececec] p-4">
+              <p className={LABEL_CLASS}>Parsed Values</p>
+              <p className="mt-2 text-3xl leading-none text-[#1a1a1a]">{batchAnalysis.count}</p>
+            </div>
+            <div className="border-2 border-[#a1a1a1] bg-[#ececec] p-4">
+              <p className={LABEL_CLASS}>Values Per Batch</p>
+              <p className="mt-2 text-3xl leading-none text-[#1a1a1a]">{batchChunkSize}</p>
+            </div>
+            <div className="border-2 border-[#a1a1a1] bg-[#ececec] p-4">
+              <p className={LABEL_CLASS}>Batch Jobs</p>
+              <p className="mt-2 text-3xl leading-none text-[#1a1a1a]">{batchAnalysis.chunkCount}</p>
+              <p className="mt-2 text-xs text-[#3a3a3a]">
+                {batchAnalysis.chunkCount > 0
+                  ? `Last job carries ${batchAnalysis.remainder} value${batchAnalysis.remainder === 1 ? '' : 's'}.`
+                  : 'No batch jobs queued yet.'}
+              </p>
+            </div>
+            <div className="border-2 border-[#a1a1a1] bg-[#ececec] p-4">
+              <p className={LABEL_CLASS}>Duplicates</p>
+              <p className="mt-2 text-3xl leading-none text-[#1a1a1a]">{batchAnalysis.duplicates.length}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 border-2 border-[#9ba9b6] bg-[#e6eef7] p-4">
+            <p className={LABEL_CLASS}>Readiness</p>
+            <p className="mt-2 text-sm text-[#1e2932]">{batchReadinessMessage}</p>
+          </div>
+
+          {batchAnalysis.invalidValues.length > 0 ? (
+            <div className="mt-5 border-2 border-[#b37e70] bg-[#f6dfd7] p-4">
+              <p className={LABEL_CLASS}>Invalid Values</p>
+              <p className="mt-2 text-sm text-[#3b1f18]">
+                {batchAnalysis.invalidValues.slice(0, 6).join(', ')}
+                {batchAnalysis.invalidValues.length > 6 ? ' ...' : ''}
+              </p>
+            </div>
+          ) : null}
+
+          {batchAnalysis.duplicates.length > 0 ? (
+            <div className="mt-5 border-2 border-[#b59b68] bg-[#f6ebcf] p-4">
+              <p className={LABEL_CLASS}>Duplicate Values</p>
+              <p className="mt-2 text-sm text-[#3c2f12]">
+                {batchAnalysis.duplicates.slice(0, 5).map((item) => `${item.value} x${item.count}`).join(', ')}
+                {batchAnalysis.duplicates.length > 5 ? ' ...' : ''}
+              </p>
+            </div>
+          ) : null}
+
+          {batchAnalysis.previewValues.length > 0 ? (
+            <div className="mt-5 border-2 border-[#8fa2b8] bg-[#edf2f7] p-4">
+              <p className={LABEL_CLASS}>First Labels</p>
+              <ol className="mt-3 space-y-2 font-mono text-sm text-[#22313f]">
+                {batchAnalysis.previewValues.map((value, index) => (
+                  <li key={`${value}-${index}`}>{String(index + 1).padStart(2, '0')}. {value}</li>
+                ))}
+              </ol>
+              {batchAnalysis.hiddenPreviewCount > 0 ? (
+                <p className="mt-3 text-xs text-[#314454]">
+                  {batchAnalysis.hiddenPreviewCount} more value{batchAnalysis.hiddenPreviewCount === 1 ? '' : 's'} not shown.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </aside>
       </form>
     </section>
   );

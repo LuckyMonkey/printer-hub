@@ -34,10 +34,16 @@ Each printer page has:
 - `barcodeValue`, optional `textLine1`, `copies`
 - `Print` button + `Test` button
 - status polling (`queued`, `sending`, `sent`/printed, `error`)
+- guided batch printing controls with live counts, duplicate warnings, and chunk/page estimates
+- Zebra batch mode defaults to `UPCA` and normalizes 11-digit UPC-A values before submit
+- Zebra QR labels are rasterized before dispatch for more reliable ZP-505 output
+- Zebra `business-card` labels expect `textLine1 = name` and `barcodeValue = link URL`
 
 ## API
 - `GET /api/print/config`
 - `POST /api/print`
+- `POST /api/batches/save-print-early`
+- `POST /api/print/zebra/image`
 - `GET /api/print/{jobId}`
 - `POST /api/print/diagnostics/brother`
 
@@ -55,11 +61,44 @@ curl -sS -X POST http://localhost:8088/api/print \
   }'
 ```
 
+PNG label example:
+```bash
+curl -sS -X POST http://localhost:8088/api/print/zebra/image \
+  -F 'file=@/home/fridge/docker/shipping label.PNG' \
+  -F 'copies=1'
+```
+
+Batch Zebra UPC example:
+```bash
+curl -sS -X POST http://localhost:8088/api/batches/save-print-early \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "printerId": "zebra-zp505",
+    "labelType": "waco-id",
+    "barcodeType": "UPCA",
+    "input": "036000291452\n012345678905\n051000012517"
+  }'
+```
+
+Zebra QR business card example:
+```bash
+curl -sS -X POST http://localhost:8088/api/print \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "printerId": "zebra-zp505",
+    "labelType": "business-card",
+    "barcodeType": "QR",
+    "barcodeValue": "https://fridge.local/services",
+    "textLine1": "Charlie",
+    "copies": 1
+  }'
+```
+
 ## Printer Transport Setup
 
 ### 1) Set printer hosts/queues
 Edit `.env` (see `.env.example`):
-- Zebra: `ZEBRA_TRANSPORT`, `ZEBRA_HOST`, `ZEBRA_PORT`, `PRINTER_ZEBRA_QUEUE`
+- Zebra: `ZEBRA_TRANSPORT`, `ZEBRA_HOST`, `ZEBRA_PORT`, `PRINTER_ZEBRA_QUEUE`, `ZEBRA_IMAGE_TRANSPORT`, `ZEBRA_USB_DEVICE`, `ZEBRA_IMAGE_THRESHOLD`
 - Brother: `BROTHER_MODE`, `BROTHER_TRANSPORT`, `BROTHER_HOST`, `BROTHER_PORT`, `PRINTER_BROTHER_QUEUE`
 - HP: `PRINTER_HP_QUEUE`
 
@@ -104,6 +143,9 @@ curl -sS -X POST http://localhost:8088/api/print/diagnostics/brother \
 
 ## Notes
 - Raw socket/CUPS success means data was sent to the printer transport; UI treats `sent` as printed success.
+- Zebra batch submissions are chunked into groups of 12 labels per print job.
+- Zebra PNG image printing can bypass CUPS and write directly to `ZEBRA_USB_DEVICE` when `ZEBRA_IMAGE_TRANSPORT=direct-usb`.
+- Zebra QR label printing uses a PNG raster-to-ZPL path instead of native `^BQN` QR commands.
 - Rate limiting is enabled for print endpoints (per-IP, per-minute).
 - Structured job logs are written to `PRINT_JOB_LOG_PATH`.
 

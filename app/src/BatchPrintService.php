@@ -35,6 +35,8 @@ final class BatchPrintService
             throw new RuntimeException('printerId is required.');
         }
 
+        $batchRules = $this->batchRulesFor($printerId);
+
         if ($input === '') {
             throw new RuntimeException('input is required (CSV/newline list).');
         }
@@ -44,8 +46,8 @@ final class BatchPrintService
             throw new RuntimeException('No valid barcode values were found in input.');
         }
 
-        if (count($values) > 120) {
-            throw new RuntimeException('Batch supports 1 to 120 barcode values.');
+        if (count($values) > $batchRules['maxValues']) {
+            throw new RuntimeException(sprintf('Batch supports 1 to %d barcode values.', $batchRules['maxValues']));
         }
 
         $this->validateBatchValues($values, $barcodeType);
@@ -117,11 +119,9 @@ final class BatchPrintService
             'csv' => BatchCodec::toCsv($values),
             'rules' => [
                 'singleSymbologyPerBatch' => true,
-                'chunking' => [
-                    'zebra-zp505' => 12,
-                    'hp-envy-5055' => 30,
-                    'brother-ql820' => 1,
-                ],
+                'chunkSize' => $batchRules['chunkSize'],
+                'maxValues' => $batchRules['maxValues'],
+                'chunking' => $this->allChunkRules(),
             ],
         ];
     }
@@ -194,7 +194,7 @@ final class BatchPrintService
     {
         $printer = $this->registry->getPrinter('zebra-zp505');
         $transport = strtolower((string) ($printer['transport'] ?? 'cups'));
-        $chunks = array_chunk($values, 12);
+        $chunks = array_chunk($values, $this->batchRulesFromPrinter($printer)['chunkSize']);
         $results = [];
 
         foreach ($chunks as $chunkIndex => $chunkValues) {
@@ -267,7 +267,7 @@ final class BatchPrintService
             throw new RuntimeException('HP cupsQueueName is not configured.');
         }
 
-        $chunks = array_chunk($values, 30);
+        $chunks = array_chunk($values, $this->batchRulesFromPrinter($printer)['chunkSize']);
         $results = [];
 
         foreach ($chunks as $chunkIndex => $chunkValues) {
@@ -346,5 +346,44 @@ final class BatchPrintService
             'QR', 'QRCODE', 'QR-CODE' => 'QR',
             default => throw new RuntimeException('barcodeType must be CODE128, UPCA, or QR.'),
         };
+    }
+
+    /**
+     * @return array{chunkSize:int,maxValues:int}
+     */
+    private function batchRulesFor(string $printerId): array
+    {
+        return $this->batchRulesFromPrinter($this->registry->getPrinter($printerId));
+    }
+
+    /**
+     * @param array<string,mixed> $printer
+     * @return array{chunkSize:int,maxValues:int}
+     */
+    private function batchRulesFromPrinter(array $printer): array
+    {
+        $batch = is_array($printer['batch'] ?? null) ? $printer['batch'] : [];
+
+        return [
+            'chunkSize' => max(1, (int) ($batch['chunkSize'] ?? 1)),
+            'maxValues' => max(1, (int) ($batch['maxValues'] ?? 120)),
+        ];
+    }
+
+    /**
+     * @return array<string,int>
+     */
+    private function allChunkRules(): array
+    {
+        $rules = [];
+        foreach (['zebra-zp505', 'hp-envy-5055', 'brother-ql820'] as $printerId) {
+            try {
+                $rules[$printerId] = $this->batchRulesFor($printerId)['chunkSize'];
+            } catch (RuntimeException) {
+                continue;
+            }
+        }
+
+        return $rules;
     }
 }

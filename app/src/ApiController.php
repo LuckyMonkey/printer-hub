@@ -14,6 +14,7 @@ final class ApiController
         private readonly MultiPrinterPrintService $multiPrint,
         private readonly RateLimiter $rateLimiter,
         private readonly PrinterRegistry $registry,
+        private readonly ?ZebraImagePrintService $zebraImagePrint = null,
         private readonly ?SeriesPrintService $seriesPrint = null,
         private readonly ?BatchPrintService $batchPrint = null
     ) {
@@ -85,6 +86,20 @@ final class ApiController
             if ($method === 'POST' && $path === '/api/print/zebra') {
                 $payload = $this->jsonBody();
                 $this->respond($this->workflow->submitZebra($payload));
+                return;
+            }
+
+            if ($method === 'POST' && $path === '/api/print/zebra/image') {
+                if ($this->zebraImagePrint === null) {
+                    throw new RuntimeException('Zebra image print service is unavailable.');
+                }
+
+                $this->enforceRateLimit();
+                $request = $this->zebraImageBody();
+                $this->respond(
+                    $this->zebraImagePrint->submit($request['payload'], $request['upload']),
+                    202
+                );
                 return;
             }
 
@@ -163,6 +178,34 @@ final class ApiController
         }
 
         return $decoded;
+    }
+
+    /**
+     * @return array{payload:array<string,mixed>,upload:array<string,mixed>|null}
+     */
+    private function zebraImageBody(): array
+    {
+        $contentType = strtolower(trim((string) ($_SERVER['CONTENT_TYPE'] ?? '')));
+        if (str_starts_with($contentType, 'application/json')) {
+            return [
+                'payload' => $this->jsonBody(),
+                'upload' => null,
+            ];
+        }
+
+        $payload = [];
+        foreach ($_POST as $key => $value) {
+            if (is_scalar($value) || $value === null) {
+                $payload[(string) $key] = $value;
+            }
+        }
+
+        $upload = $_FILES['file'] ?? null;
+
+        return [
+            'payload' => $payload,
+            'upload' => is_array($upload) ? $upload : null,
+        ];
     }
 
     /** @param array<string,mixed> $payload */

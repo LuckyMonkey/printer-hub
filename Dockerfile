@@ -37,7 +37,7 @@ RUN apt-get update \
 
 RUN sed -ri "s|^;?clear_env\s*=.*|clear_env = no|" /usr/local/etc/php-fpm.d/www.conf
 
-RUN usermod -aG lpadmin www-data \
+RUN usermod -aG lpadmin,lp www-data \
     && printf 'www-data ALL=(ALL) NOPASSWD: /usr/bin/lp, /usr/bin/lpstat, /usr/sbin/lpadmin, /usr/sbin/cupsenable, /usr/sbin/accept, /usr/bin/cancel, /usr/bin/lpoptions\n' > /etc/sudoers.d/printer-hub \
     && chmod 0440 /etc/sudoers.d/printer-hub
 

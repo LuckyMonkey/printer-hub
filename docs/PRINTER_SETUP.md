@@ -14,6 +14,10 @@ Endpoint: `POST /api/printers/add`
 - Typical URI pattern: `usb://Zebra%20Technologies/...`
 - Model: `raw`
 - Workflow uses ZPL pass-through (`lp -o raw`)
+- Batch workflow prints up to 12 labels per Zebra job
+- UPC-A batches accept 11 or 12 digits per value
+- QR labels are rasterized to ZPL image data before dispatch for more consistent output
+- `business-card` QR labels use `textLine1` as the name and `barcodeValue` as the link URL
 
 ## Brother QL-820NWB (Network)
 - Typical URI pattern: `socket://<brother-ip>:9100`
@@ -28,6 +32,7 @@ Endpoint: `POST /api/printers/add`
 ## Verify CUPS Queues
 - CUPS web admin: `http://localhost:8631/`
 - API: `GET /api/printers`
+- Batch print endpoint: `POST /api/batches/save-print-early`
 
 ## Common Mistakes
 - Wrong queue name in env vs CUPS actual queue name

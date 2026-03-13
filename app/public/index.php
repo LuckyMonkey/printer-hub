@@ -23,6 +23,9 @@ use PrinterHub\SeriesPrintService;
 use PrinterHub\SheetsBackupService;
 use PrinterHub\BrotherTemplateClient;
 use PrinterHub\ZebraLabelService;
+use PrinterHub\ZebraImagePrintService;
+use PrinterHub\ZebraPngRasterService;
+use PrinterHub\ZebraQrLabelService;
 use PrinterHub\ZplRasterService;
 
 require_once __DIR__ . '/../src/CommandRunner.php';
@@ -42,6 +45,9 @@ require_once __DIR__ . '/../src/SeriesPrintService.php';
 require_once __DIR__ . '/../src/RawSocketTransport.php';
 require_once __DIR__ . '/../src/CupsTransport.php';
 require_once __DIR__ . '/../src/ZebraLabelService.php';
+require_once __DIR__ . '/../src/ZebraPngRasterService.php';
+require_once __DIR__ . '/../src/ZebraQrLabelService.php';
+require_once __DIR__ . '/../src/ZebraImagePrintService.php';
 require_once __DIR__ . '/../src/BrotherTemplateClient.php';
 require_once __DIR__ . '/../src/HpLabelService.php';
 require_once __DIR__ . '/../src/HpBatchPdfService.php';
@@ -74,17 +80,21 @@ if (str_starts_with($path, '/api/')) {
     $socketTransport = new RawSocketTransport();
     $cupsTransport = new CupsTransport($commands);
     $zebraService = new ZebraLabelService();
+    $zebraPngRaster = new ZebraPngRasterService();
+    $zebraQr = new ZebraQrLabelService($commands, $zebraPngRaster);
     $brotherService = new BrotherTemplateClient();
     $hpService = new HpLabelService();
     $hpBatchPdf = new HpBatchPdfService($commands);
     $sheetsBackup = new SheetsBackupService(getenv('GAPPS_WEBHOOK_URL') ?: null);
+    $printJobs = new PrintJobRepository($database);
     $multiPrint = new MultiPrinterPrintService(
         registry: $registry,
-        jobs: new PrintJobRepository($database),
+        jobs: $printJobs,
         logger: $logger,
         socketTransport: $socketTransport,
         cupsTransport: $cupsTransport,
         zebra: $zebraService,
+        zebraQr: $zebraQr,
         brother: $brotherService,
         hp: $hpService
     );
@@ -94,6 +104,13 @@ if (str_starts_with($path, '/api/')) {
         $batches,
         $sheetsBackup,
         new ZplRasterService()
+    );
+    $zebraImagePrint = new ZebraImagePrintService(
+        $registry,
+        $printJobs,
+        $logger,
+        $cupsTransport,
+        $zebraPngRaster
     );
     $seriesRepo = new SeriesBarcodeRepository($database);
     $seriesPrint = new SeriesPrintService($multiPrint, $seriesRepo, $logger);
@@ -116,6 +133,7 @@ if (str_starts_with($path, '/api/')) {
         $multiPrint,
         new RateLimiter(),
         $registry,
+        $zebraImagePrint,
         $seriesPrint,
         $batchPrint
     );
