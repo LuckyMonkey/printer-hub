@@ -84,6 +84,7 @@ if (str_starts_with($path, '/api/zpl/')) {
     require_once __DIR__ . '/../src/Zpl/Lexer.php';
     require_once __DIR__ . '/../src/Zpl/Barcode/Code128.php';
     require_once __DIR__ . '/../src/Zpl/Barcode/Code39.php';
+    require_once __DIR__ . '/../src/Zpl/Barcode/QrCode.php';
     require_once __DIR__ . '/../src/Zpl/Renderer.php';
     require_once __DIR__ . '/../src/Zpl/PreviewController.php';
 

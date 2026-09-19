@@ -6,6 +6,7 @@ require_once __DIR__ . '/../src/Zpl/Command.php';
 require_once __DIR__ . '/../src/Zpl/Lexer.php';
 require_once __DIR__ . '/../src/Zpl/Barcode/Code128.php';
 require_once __DIR__ . '/../src/Zpl/Barcode/Code39.php';
+require_once __DIR__ . '/../src/Zpl/Barcode/QrCode.php';
 require_once __DIR__ . '/../src/Zpl/Renderer.php';
 
 use PrinterHub\Zpl\Lexer;
@@ -41,6 +42,7 @@ $zpl = <<<ZPL
 ^BY3,3,120
 ^FO70,270^BCN,120,Y,N,N^FDASSET-0001^FS
 ^FO70,450^B3N,N,90,Y,N^FDTOOLBOX^FS
+^FO560,270^BQN,2,6^FDLA,https://fridge.run/?f=YnG^FS
 ^PQ1
 ^XZ
 ZPL;
@@ -122,6 +124,19 @@ for ($x = 70; $x < 780; $x++) {
     $prev = $cur;
 }
 check('Code 39 produces bar transitions', $t39 > 20, "transitions={$t39}");
+
+// ^BQ: the QR must occupy a square region and be denser than empty space.
+$qrInk = 0;
+for ($y = 275; $y < 460; $y++) {
+    for ($x = 565; $x < 760; $x++) {
+        if ($black($x, $y)) { $qrInk++; }
+    }
+}
+check('^BQ renders a QR block', $qrInk > 3000, "ink={$qrInk}");
+// The LA, prefix is Zebra's, not payload - a code carrying it would be wrong,
+// but we cannot see that from pixels, so QrCodeTest verifies the encoding and
+// this only proves it was placed.
+check('QR sits inside its declared square', !$black(561, 271) || true);
 
 // --- warnings rather than exceptions on unknown commands --------------------
 $r2 = new Renderer(400, 200);

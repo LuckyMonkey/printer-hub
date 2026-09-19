@@ -6,6 +6,7 @@ namespace PrinterHub\Zpl;
 
 use PrinterHub\Zpl\Barcode\Code128;
 use PrinterHub\Zpl\Barcode\Code39;
+use PrinterHub\Zpl\Barcode\QrCode;
 use RuntimeException;
 
 /**
@@ -142,6 +143,16 @@ final class Renderer
                 ];
                 break;
 
+            case 'BQ':                       // QR code
+                // ^BQa,b,c - c is the magnification, i.e. dots per module.
+                $this->pendingBarcode = [
+                    'type' => 'qr',
+                    'height' => max(1, $c->int(2, 3)),   // reused as magnification
+                    'line' => false,
+                    'lineAbove' => false,
+                ];
+                break;
+
             case 'FR':                       // reverse this field
                 $this->fieldReverse = true;
                 break;
@@ -219,6 +230,12 @@ final class Renderer
     /** @param array{type:string,height:int,line:bool,lineAbove:bool} $bc */
     private function drawBarcode(int $x, int $y, string $data, array $bc): void
     {
+        if ($bc['type'] === 'qr') {
+            $this->drawQr($x, $y, $data, $bc['height']);
+
+            return;
+        }
+
         $runs = $bc['type'] === 'code39'
             ? $this->code39->encode($data, $this->barRatio)
             : $this->code128->encode($data);
@@ -245,6 +262,51 @@ final class Renderer
             $label = $bc['type'] === 'code39' ? '*' . strtoupper($data) . '*' : $data;
             $ty = $bc['lineAbove'] ? $y : $barsTop + $height + 2;
             $this->drawText($x, $ty, $label, max(12, $textHeight - 2), false);
+        }
+    }
+
+    /**
+     * ^BQ carries its error-correction level and input mode INSIDE the field
+     * data, not as command parameters: ^FDLA,PAYLOAD means level L, automatic
+     * input. That prefix is Zebra's, not part of the payload, so it must be
+     * stripped before encoding or every code carries two stray characters.
+     */
+    private function drawQr(int $x, int $y, string $data, int $magnification): void
+    {
+        $ec = QrCode::EC_M;
+        $payload = $data;
+
+        if (preg_match('/^([LMQH])([AMNK])?,(.*)$/s', $data, $m) === 1) {
+            $ec = match ($m[1]) {
+                'L' => QrCode::EC_L,
+                'M' => QrCode::EC_M,
+                'Q' => QrCode::EC_Q,
+                'H' => QrCode::EC_H,
+            };
+            $payload = $m[3];
+        }
+
+        if ($payload === '') {
+            $this->warnings[] = '^BQ with empty payload';
+
+            return;
+        }
+
+        try {
+            $matrix = (new QrCode())->encode($payload, $ec);
+        } catch (RuntimeException $e) {
+            $this->warnings[] = '^BQ: ' . $e->getMessage();
+
+            return;
+        }
+
+        $module = max(1, $magnification);
+        foreach ($matrix as $r => $row) {
+            foreach ($row as $c => $dark) {
+                if ($dark) {
+                    $this->canvas->fill($x + $c * $module, $y + $r * $module, $module, $module);
+                }
+            }
         }
     }
 
