@@ -44,8 +44,15 @@ final class Lexer
 
             // Mnemonic: letters/digits, at most two (e.g. FO, B3, GB, A0 is
             // really ^A with font '0', handled by the renderer).
+            // Mnemonics are two characters, with one exception: ^A (scalable
+            // font) is a single letter whose font designator follows it with no
+            // separator, as in ^A0N,48,48. Taking two characters there would
+            // yield a command called "A0" and silently lose every font change.
+            // ^A and ^A@ are the only caret commands beginning with A.
+            $maxLen = ($prefix === '^' && strtoupper($zpl[$i] ?? '') === 'A') ? 1 : 2;
+
             $mnemonic = '';
-            while ($i < $len && strlen($mnemonic) < 2 && ctype_alnum($zpl[$i])) {
+            while ($i < $len && strlen($mnemonic) < $maxLen && ctype_alnum($zpl[$i])) {
                 $mnemonic .= strtoupper($zpl[$i]);
                 $i++;
             }
