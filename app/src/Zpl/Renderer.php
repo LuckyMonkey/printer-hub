@@ -44,11 +44,18 @@ final class Renderer
     private int $barRatio = 3;
     private int $barHeight = 60;
 
+    /**
+     * Default field orientation (^FW). N normal, R rotated 90 clockwise,
+     * I inverted 180, B bottom-up 270.
+     */
+    private string $defaultRotation = 'N';
+
     // --- pending field -------------------------------------------------------
     private ?int $fieldX = null;
     private ?int $fieldY = null;
     private bool $fieldBaseline = false;
     private bool $fieldReverse = false;
+    private ?string $fieldRotation = null;
     private ?int $fontHeight = null;
     private ?int $fontWidth = null;
     /** @var array{type:string,height:int,line:bool,lineAbove:bool}|null */
@@ -109,8 +116,16 @@ final class Renderer
                 break;
 
             case 'A':                        // scalable font for this field
+                // ^A0N,48,48 - the first parameter fuses the font designator
+                // and the orientation, e.g. '0N'. The orientation is its LAST
+                // character when one is present.
+                $this->fieldRotation = $this->orientationFrom($c->str(0, ''));
                 $this->fontHeight = $c->int(1, $this->defaultFontHeight);
                 $this->fontWidth = $c->int(2, 0);
+                break;
+
+            case 'FW':                       // default field orientation
+                $this->defaultRotation = $this->orientationFrom($c->str(0, 'N')) ?? 'N';
                 break;
 
             case 'CF':                       // change default font
@@ -126,6 +141,7 @@ final class Renderer
                 break;
 
             case 'BC':                       // Code 128
+                $this->fieldRotation = $this->orientationFrom($c->str(0, ''));
                 $this->pendingBarcode = [
                     'type' => 'code128',
                     'height' => $c->int(1, $this->barHeight),
@@ -135,6 +151,7 @@ final class Renderer
                 break;
 
             case 'B3':                       // Code 39
+                $this->fieldRotation = $this->orientationFrom($c->str(0, ''));
                 $this->pendingBarcode = [
                     'type' => 'code39',
                     'height' => $c->int(2, $this->barHeight),
@@ -145,6 +162,7 @@ final class Renderer
 
             case 'BQ':                       // QR code
                 // ^BQa,b,c - c is the magnification, i.e. dots per module.
+                $this->fieldRotation = $this->orientationFrom($c->str(0, ''));
                 $this->pendingBarcode = [
                     'type' => 'qr',
                     'height' => max(1, $c->int(2, 3)),   // reused as magnification
@@ -201,6 +219,7 @@ final class Renderer
         $this->fieldY = null;
         $this->fieldBaseline = false;
         $this->fieldReverse = false;
+        $this->fieldRotation = null;
         $this->fontHeight = null;
         $this->fontWidth = null;
         $this->pendingBarcode = null;
@@ -225,7 +244,7 @@ final class Renderer
             $h = $this->fontHeight ?? $this->defaultFontHeight;
             // ^FT positions the BASELINE; ^FO positions the top-left corner.
             $top = $this->fieldBaseline ? $y - $h : $y;
-            $this->drawText($x, $top, $data, $h, $this->fieldReverse);
+            $this->blit($x, $top, $this->textMatrix($data, $h), $this->rotation(), $this->fieldReverse);
         }
 
         $this->resetField();
@@ -240,33 +259,90 @@ final class Renderer
             return;
         }
 
-        $runs = $bc['type'] === 'code39'
-            ? $this->code39->encode($data, $this->barRatio)
-            : $this->code128->encode($data);
+        try {
+            $runs = $bc['type'] === 'code39'
+                ? $this->code39->encode($data, $this->barRatio)
+                : $this->code128->encode($data);
+        } catch (RuntimeException $e) {
+            $this->warnings[] = ($bc['type'] === 'code39' ? '^B3: ' : '^BC: ') . $e->getMessage();
+
+            return;
+        }
 
         $height = max(1, $bc['height']);
-        $module = $this->moduleWidth;
-
-        // Human-readable line sits below the bars by default, above with ^BCx,,,Y.
         $textHeight = $bc['line'] ? (int) round($height * 0.18) + 6 : 0;
-        $barsTop = $y + ($bc['lineAbove'] && $bc['line'] ? $textHeight : 0);
+        $label = null;
+        if ($bc['line']) {
+            $label = $bc['type'] === 'code39' ? '*' . strtoupper($data) . '*' : $data;
+        }
 
-        $cursor = $x;
-        $isBar = true;                       // every symbology here starts on a bar
+        // Bars AND the human-readable line are built into one bitmap so that
+        // rotating the field rotates them together. Rotating them separately
+        // would leave the text upright beside a sideways barcode.
+        $matrix = $this->barcodeMatrix(
+            $runs,
+            $height,
+            $this->moduleWidth,
+            $label,
+            $bc['lineAbove'],
+            max(12, $textHeight - 2)
+        );
+
+        $this->blit($x, $y, $matrix, $this->rotation(), $this->fieldReverse);
+    }
+
+    /**
+     * @param list<int> $runs alternating bar,space run lengths in modules
+     *
+     * @return list<list<bool>>
+     */
+    private function barcodeMatrix(
+        array $runs,
+        int $height,
+        int $module,
+        ?string $label,
+        bool $labelAbove,
+        int $textHeight,
+    ): array {
+        $barsWidth = array_sum($runs) * $module;
+        $textMatrix = $label !== null ? $this->textMatrix($label, $textHeight) : [];
+        $textRows = count($textMatrix);
+        $textCols = $textRows > 0 ? count($textMatrix[0]) : 0;
+
+        $width = max($barsWidth, $textCols);
+        $gap = $textRows > 0 ? 2 : 0;
+        $total = $height + $textRows + $gap;
+
+        $m = array_fill(0, $total, array_fill(0, $width, false));
+        $barsTop = ($textRows > 0 && $labelAbove) ? $textRows + $gap : 0;
+
+        $cursor = 0;
+        $isBar = true;                        // every symbology here starts on a bar
         foreach ($runs as $run) {
-            $w = $run * $module;
+            $runWidth = $run * $module;
             if ($isBar) {
-                $this->canvas->fill($cursor, $barsTop, $w, $height);
+                for ($dy = 0; $dy < $height; $dy++) {
+                    for ($dx = 0; $dx < $runWidth; $dx++) {
+                        $m[$barsTop + $dy][$cursor + $dx] = true;
+                    }
+                }
             }
-            $cursor += $w;
+            $cursor += $runWidth;
             $isBar = !$isBar;
         }
 
-        if ($bc['line']) {
-            $label = $bc['type'] === 'code39' ? '*' . strtoupper($data) . '*' : $data;
-            $ty = $bc['lineAbove'] ? $y : $barsTop + $height + 2;
-            $this->drawText($x, $ty, $label, max(12, $textHeight - 2), false);
+        if ($textRows > 0) {
+            $textTop = $labelAbove ? 0 : $height + $gap;
+            foreach ($textMatrix as $dy => $row) {
+                foreach ($row as $dx => $on) {
+                    if ($on && isset($m[$textTop + $dy][$dx])) {
+                        $m[$textTop + $dy][$dx] = true;
+                    }
+                }
+            }
         }
+
+        return $m;
     }
 
     /**
@@ -304,14 +380,23 @@ final class Renderer
             return;
         }
 
+        // Expand to the magnification first so the result is a plain bitmap,
+        // which the blitter can rotate like anything else.
         $module = max(1, $magnification);
-        foreach ($matrix as $r => $row) {
-            foreach ($row as $c => $dark) {
-                if ($dark) {
-                    $this->canvas->fill($x + $c * $module, $y + $r * $module, $module, $module);
+        $out = [];
+        foreach ($matrix as $row) {
+            $expanded = [];
+            foreach ($row as $dark) {
+                for ($i = 0; $i < $module; $i++) {
+                    $expanded[] = $dark;
                 }
             }
+            for ($i = 0; $i < $module; $i++) {
+                $out[] = $expanded;
+            }
         }
+
+        $this->blit($x, $y, $out, $this->rotation(), $this->fieldReverse);
     }
 
     /**
@@ -351,17 +436,13 @@ final class Renderer
             return;
         }
 
-        $x0 = $this->fieldX + $this->homeX;
-        $y0 = $this->fieldY + $this->homeY;
-        $inverse = $this->fieldReverse;
-
-        foreach ($rows as $dy => $row) {
-            foreach ($row as $dx => $dark) {
-                if ($dark) {
-                    $this->canvas->fill($x0 + $dx, $y0 + $dy, 1, 1, $inverse);
-                }
-            }
-        }
+        $this->blit(
+            $this->fieldX + $this->homeX,
+            $this->fieldY + $this->homeY,
+            $rows,
+            $this->rotation(),
+            $this->fieldReverse
+        );
 
         // ^GF is self-contained: it consumes the field position it was given.
         $this->resetField();
@@ -394,32 +475,144 @@ final class Renderer
         $this->resetField();
     }
 
-    private function drawText(int $x, int $y, string $text, int $height, bool $inverse): void
+    /**
+     * The orientation letter from a parameter like '0N', 'R' or ''.
+     *
+     * ^A fuses the font designator and the orientation into one parameter, so
+     * the letter wanted is the LAST character, not the first.
+     */
+    private function orientationFrom(string $param): ?string
     {
-        $font = $this->resolveFont();
-        if ($font === null) {
-            // No TrueType face available: fall back to GD's bitmap font so the
-            // preview still shows the text, just not at the right size.
-            $this->warnings[] = 'no TrueType font available; text is approximate';
-            imagestring($this->canvas->image(), 5, $x, $y, $text, $inverse ? 0xFFFFFF : 0);
+        if ($param === '') {
+            return null;
+        }
+        $last = strtoupper(substr($param, -1));
 
+        return in_array($last, ['N', 'R', 'I', 'B'], true) ? $last : null;
+    }
+
+    /** The rotation in force for the current field: its own, else ^FW's. */
+    private function rotation(): string
+    {
+        return $this->fieldRotation ?? $this->defaultRotation;
+    }
+
+    /**
+     * Draw a bitmap at (x, y), rotated.
+     *
+     * Every drawable - text, barcode, QR, embedded image - is reduced to a
+     * bitmap and placed through here, so rotation is implemented exactly once
+     * instead of four subtly different times.
+     *
+     * ANCHORING: the rotated bitmap's top-left corner lands on the field
+     * origin. The alternative reading - pivoting about the origin so a rotated
+     * field sweeps into a different quadrant - is equally defensible from the
+     * ZPL manual, but this one guarantees that a field placed at sensible
+     * coordinates never renders off the left or top edge of the label. A ^A0I
+     * field therefore appears upside down within the same rectangle it would
+     * have occupied unrotated, rather than extending back past the origin.
+     *
+     *   N  as-is        R  90 clockwise
+     *   I  180          B  270 (bottom-up)
+     *
+     * @param list<list<bool>> $m
+     */
+    private function blit(int $x, int $y, array $m, string $rot, bool $inverse = false): void
+    {
+        $h = count($m);
+        if ($h === 0) {
+            return;
+        }
+        $w = count($m[0]);
+        if ($w === 0) {
             return;
         }
 
+        foreach ($m as $dy => $row) {
+            foreach ($row as $dx => $on) {
+                if (!$on) {
+                    continue;
+                }
+                [$px, $py] = match ($rot) {
+                    'R' => [$x + ($h - 1 - $dy), $y + $dx],
+                    'I' => [$x + ($w - 1 - $dx), $y + ($h - 1 - $dy)],
+                    'B' => [$x + $dy, $y + ($w - 1 - $dx)],
+                    default => [$x + $dx, $y + $dy],
+                };
+                $this->canvas->fill($px, $py, 1, 1, $inverse);
+            }
+        }
+    }
+
+    /**
+     * Rasterise a line of text into a bitmap of the declared dot height.
+     *
+     * The matrix is the declared height plus room for descenders, rather than
+     * the glyphs' own bounding box, so that 'abc' and 'ABC' sit on the same
+     * baseline instead of each being top-aligned to their own ink.
+     *
+     * @return list<list<bool>>
+     */
+    private function textMatrix(string $text, int $height): array
+    {
+        if ($text === '') {
+            return [];
+        }
+
+        $font = $this->resolveFont();
+        if ($font === null) {
+            $this->warnings[] = 'no TrueType font available; text is approximate';
+            $w = max(1, imagefontwidth(5) * strlen($text));
+            $h = max(1, imagefontheight(5));
+            $im = imagecreatetruecolor($w, $h);
+            imagefilledrectangle($im, 0, 0, $w - 1, $h - 1, (int) imagecolorallocate($im, 255, 255, 255));
+            imagestring($im, 5, 0, 0, $text, (int) imagecolorallocate($im, 0, 0, 0));
+
+            return $this->imageToMatrix($im);
+        }
+
         $size = $this->pointSizeFor($font, $height);
-        // imagettftext takes a BASELINE, and we were handed a top edge.
-        $box = imagettfbbox($size, 0, $font, 'Hg');
-        $ascent = $box === false ? $height : abs($box[7]);
-        imagettftext(
-            $this->canvas->image(),
-            $size,
-            0,
-            $x,
-            $y + $ascent,
-            $inverse ? 0xFFFFFF : 0,
-            $font,
-            $text
-        );
+        $box = imagettfbbox($size, 0, $font, $text);
+        if ($box === false) {
+            return [];
+        }
+        $xs = [$box[0], $box[2], $box[4], $box[6]];
+        $minX = min($xs);
+        $width = max(1, max($xs) - $minX + 2);
+
+        $ref = imagettfbbox($size, 0, $font, 'Hg');
+        $ascent = $ref === false ? $height : abs($ref[7]);
+        // Room below the baseline for descenders, which would otherwise be clipped.
+        $descent = $ref === false ? (int) ($height * 0.25) : abs($ref[1]);
+        $total = max(1, $ascent + $descent + 1);
+
+        $im = imagecreatetruecolor($width, $total);
+        imagefilledrectangle($im, 0, 0, $width - 1, $total - 1, (int) imagecolorallocate($im, 255, 255, 255));
+        imagettftext($im, $size, 0, -$minX + 1, $ascent, (int) imagecolorallocate($im, 0, 0, 0), $font, $text);
+
+        return $this->imageToMatrix($im);
+    }
+
+    /**
+     * @return list<list<bool>>
+     */
+    private function imageToMatrix(\GdImage $im): array
+    {
+        $w = imagesx($im);
+        $h = imagesy($im);
+        $m = [];
+        for ($y = 0; $y < $h; $y++) {
+            $row = [];
+            for ($x = 0; $x < $w; $x++) {
+                // Antialiased edges are pushed to ink or paper: the printer has
+                // no grey, so the preview must not pretend otherwise.
+                $row[] = (imagecolorat($im, $x, $y) & 0xFF) < 128;
+            }
+            $m[] = $row;
+        }
+        imagedestroy($im);
+
+        return $m;
     }
 
     /**
