@@ -25,6 +25,7 @@ final class PreviewController
     /** Guard rails. A preview is cheap; an unbounded one is a denial of service. */
     private const MAX_ZPL_BYTES = 256 * 1024;
     private const MAX_DOTS = 4096;
+    private const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
     /** Dots per millimetre a Zebra actually offers. */
     private const VALID_DPMM = [6, 8, 12, 24];
@@ -45,6 +46,17 @@ final class PreviewController
                     return;
                 }
                 $this->render($query);
+
+                return;
+            }
+
+            if ($path === '/api/zpl/image') {
+                if ($method !== 'POST') {
+                    $this->json(['error' => 'Use POST with the image as the request body.'], 405);
+
+                    return;
+                }
+                $this->convertImage($query);
 
                 return;
             }
@@ -123,6 +135,39 @@ final class PreviewController
             header('X-Zpl-Warnings: ' . implode(' ', array_slice($warnings, 0, 20)));
         }
         echo $png;
+    }
+
+    /**
+     * Image -> ^GF graphic field.
+     *
+     * Returns the ZPL rather than a picture, because the ZPL is the thing you
+     * paste into a label and the thing the printer receives. The editor renders
+     * it through the same preview path as everything else, so what is shown is
+     * the actual field, not a separate drawing of the original image.
+     */
+    private function convertImage(array $query): void
+    {
+        $raw = (string) file_get_contents('php://input');
+        if ($raw === '') {
+            throw new RuntimeException('No image supplied.');
+        }
+        if (strlen($raw) > self::MAX_IMAGE_BYTES) {
+            throw new RuntimeException('Image exceeds ' . (self::MAX_IMAGE_BYTES / 1048576) . ' MB.');
+        }
+
+        $width = isset($query['w']) ? (int) $query['w'] : null;
+        $threshold = isset($query['threshold']) ? (int) $query['threshold'] : 128;
+        $dither = in_array(strtolower((string) ($query['dither'] ?? '')), ['1', 'true', 'yes'], true);
+
+        $result = (new ImageConverter())->toGraphicField($raw, $width, $threshold, $dither);
+
+        $this->json([
+            'zpl' => $result['zpl'],
+            'width' => $result['width'],
+            'height' => $result['height'],
+            'bytes' => $result['bytes'],
+            'dither' => $dither,
+        ]);
     }
 
     private function hasFont(): bool

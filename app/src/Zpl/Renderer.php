@@ -169,6 +169,10 @@ final class Renderer
                 $this->drawBox($c);
                 break;
 
+            case 'GF':                       // graphic field (embedded bitmap)
+                $this->drawGraphic($c);
+                break;
+
             case 'FX':                       // comment
             case 'CI':                       // character set
             case 'PQ':                       // print quantity
@@ -308,6 +312,59 @@ final class Renderer
                 }
             }
         }
+    }
+
+    /**
+     * ^GFa,b,c,d,DATA - an embedded bitmap.
+     *
+     * The data is the FIFTH comma-separated field and may itself contain
+     * commas, because the ASCII-hex RLE uses ',' to terminate a row. So the
+     * raw payload is split only four times; exploding it fully would truncate
+     * every run-length-encoded image at its first blank row.
+     */
+    private function drawGraphic(Command $c): void
+    {
+        if ($this->fieldX === null || $this->fieldY === null) {
+            $this->warnings[] = '^GF without ^FO';
+
+            return;
+        }
+
+        $parts = explode(',', $c->raw, 5);
+        if (count($parts) < 5) {
+            $this->warnings[] = '^GF is missing its data field';
+            $this->resetField();
+
+            return;
+        }
+
+        $format = trim($parts[0]) !== '' ? trim($parts[0]) : 'A';
+        $totalBytes = (int) trim($parts[2]) ?: (int) trim($parts[1]);
+        $bytesPerRow = (int) trim($parts[3]);
+
+        try {
+            $rows = (new GraphicField())->decode($format, $bytesPerRow, $totalBytes, $parts[4]);
+        } catch (RuntimeException $e) {
+            $this->warnings[] = '^GF: ' . $e->getMessage();
+            $this->resetField();
+
+            return;
+        }
+
+        $x0 = $this->fieldX + $this->homeX;
+        $y0 = $this->fieldY + $this->homeY;
+        $inverse = $this->fieldReverse;
+
+        foreach ($rows as $dy => $row) {
+            foreach ($row as $dx => $dark) {
+                if ($dark) {
+                    $this->canvas->fill($x0 + $dx, $y0 + $dy, 1, 1, $inverse);
+                }
+            }
+        }
+
+        // ^GF is self-contained: it consumes the field position it was given.
+        $this->resetField();
     }
 
     private function drawBox(Command $c): void

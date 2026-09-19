@@ -77,7 +77,13 @@
     border-radius: 7px; padding: 5px 11px; font: inherit; font-size: 12px; cursor: pointer;
   }
   button:hover { border-color: var(--accent); }
-  .samples { display: flex; gap: 6px; flex-wrap: wrap; }
+  .samples { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .imgbtn {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
+    padding: 5px 11px; font-size: 12px; cursor: pointer; color: var(--ink);
+  }
+  .imgbtn:hover { border-color: var(--accent); }
+  .drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
 </style>
 </head>
 <body>
@@ -109,6 +115,15 @@
         <button data-sample="asset">Asset tag</button>
         <button data-sample="bin">Bin label</button>
         <button data-sample="box">Boxes</button>
+        <label class="imgbtn" title="Convert an image to a ^GF graphic field">
+          Add image<input type="file" id="img" accept="image/*" hidden>
+        </label>
+        <label class="ctl" style="font-size:11px">w
+          <input type="number" id="imgw" value="300" min="8" max="2000" step="10" style="width:4.5em">
+        </label>
+        <label class="ctl" style="font-size:11px">
+          <input type="checkbox" id="dither"> dither
+        </label>
       </span>
     </h2>
     <textarea id="zpl" spellcheck="false" aria-label="ZPL source"></textarea>
@@ -234,6 +249,62 @@
       try { localStorage.setItem('zplstudio.draft', zpl.value); } catch (e) {}
       render();
     });
+  });
+
+  // ---- image -> ^GF ------------------------------------------------------
+  // The server returns ZPL, not a picture. That matters: the graphic field is
+  // what the printer receives, so the preview renders the SAME text you will
+  // send, rather than drawing the original image alongside it.
+  function convertImage(file) {
+    if (!file) { return; }
+    var w = parseInt(document.getElementById('imgw').value, 10) || 300;
+    var dither = document.getElementById('dither').checked ? '1' : '0';
+    setStatus('Converting ' + file.name + '\u2026');
+
+    fetch('/api/zpl/image?w=' + w + '&dither=' + dither, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok) { throw new Error(j.error || ('HTTP ' + r.status)); }
+        return j;
+      });
+    }).then(function (j) {
+      // Insert at the caret, wrapped in a field so it lands somewhere visible.
+      var field = '^FO20,20' + j.zpl + '^FS\n';
+      var pos = zpl.selectionStart;
+      var before = zpl.value.slice(0, pos);
+      var after = zpl.value.slice(zpl.selectionEnd);
+      // Drop it just before ^XZ when the caret is at the very end.
+      if (pos === zpl.value.length && /\^XZ\s*$/.test(zpl.value)) {
+        zpl.value = zpl.value.replace(/\^XZ(\s*)$/, field + '^XZ$1');
+      } else {
+        zpl.value = before + field + after;
+      }
+      try { localStorage.setItem('zplstudio.draft', zpl.value); } catch (e) {}
+      setStatus('Inserted ' + j.width + 'x' + j.height + ' image, '
+        + (j.bytes / 1024).toFixed(1) + ' KB of bitmap'
+        + (j.dither ? ', dithered' : ', thresholded') + '.');
+      render();
+    }).catch(function (e) { setStatus(e.message, 'err'); });
+  }
+
+  document.getElementById('img').addEventListener('change', function () {
+    convertImage(this.files && this.files[0]);
+    this.value = '';
+  });
+
+  // Drag an image straight onto the editor.
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    zpl.addEventListener(ev, function (e) { e.preventDefault(); zpl.classList.add('drop'); });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    zpl.addEventListener(ev, function (e) { e.preventDefault(); zpl.classList.remove('drop'); });
+  });
+  zpl.addEventListener('drop', function (e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f && /^image\//.test(f.type)) { convertImage(f); }
   });
 
   document.getElementById('download').addEventListener('click', function () {
