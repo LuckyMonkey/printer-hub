@@ -15,7 +15,6 @@ Endpoint: `POST /api/printers/add`
 - Model: `raw`
 - Workflow uses ZPL pass-through (`lp -o raw`)
 - Batch workflow prints up to 12 labels per Zebra job
-- UPC-A batches accept 11 or 12 digits per value
 - QR labels are rasterized to ZPL image data before dispatch for more consistent output
 - `business-card` QR labels use `textLine1` as the name and `barcodeValue` as the link URL
 

@@ -28,34 +28,6 @@ final class HpBatchPdfService
         '114131', '311141', '411131', '211412', '211214', '211232', '2331112',
     ];
 
-    /** @var array<string,string> */
-    private const UPC_L_PATTERNS = [
-        '0' => '0001101',
-        '1' => '0011001',
-        '2' => '0010011',
-        '3' => '0111101',
-        '4' => '0100011',
-        '5' => '0110001',
-        '6' => '0101111',
-        '7' => '0111011',
-        '8' => '0110111',
-        '9' => '0001011',
-    ];
-
-    /** @var array<string,string> */
-    private const UPC_R_PATTERNS = [
-        '0' => '1110010',
-        '1' => '1100110',
-        '2' => '1101100',
-        '3' => '1000010',
-        '4' => '1011100',
-        '5' => '1001110',
-        '6' => '1010000',
-        '7' => '1000100',
-        '8' => '1001000',
-        '9' => '1110100',
-    ];
-
     public function __construct(private readonly CommandRunner $commands)
     {
     }
@@ -75,8 +47,8 @@ final class HpBatchPdfService
         }
 
         $barcodeType = strtoupper(trim($barcodeType));
-        if (!in_array($barcodeType, ['CODE128', 'UPCA', 'QR'], true)) {
-            throw new RuntimeException('barcodeType must be CODE128, UPCA, or QR.');
+        if (!in_array($barcodeType, ['CODE128', 'QR'], true)) {
+            throw new RuntimeException('barcodeType must be CODE128 or QR.');
         }
 
         $labelType = strtolower(trim($labelType));
@@ -125,13 +97,6 @@ final class HpBatchPdfService
 
             if ($barcodeType === 'QR') {
                 $this->drawQrCell($image, $x, $y, $cellWidth, $cellHeight, $safe, $black);
-                continue;
-            }
-
-            if ($barcodeType === 'UPCA') {
-                $upc = $this->normalizeUpca($safe);
-                $this->drawUpcA($image, $x + 12, $y + 22, $cellWidth - 24, $cellHeight - 70, $upc, $black, $white);
-                $this->drawCenteredText($image, $upc, $x, $y + $cellHeight - 24, $cellWidth, 2, $black);
                 continue;
             }
 
@@ -313,42 +278,6 @@ final class HpBatchPdfService
         }
     }
 
-    private function drawUpcA(
-        GdImage $image,
-        int $x,
-        int $y,
-        int $maxWidth,
-        int $barHeight,
-        string $upc,
-        int $black,
-        int $white
-    ): void {
-        $bits = '101';
-        for ($i = 0; $i < 6; $i++) {
-            $bits .= self::UPC_L_PATTERNS[$upc[$i]];
-        }
-        $bits .= '01010';
-        for ($i = 6; $i < 12; $i++) {
-            $bits .= self::UPC_R_PATTERNS[$upc[$i]];
-        }
-        $bits .= '101';
-
-        $moduleWidth = max(1, (int) floor($maxWidth / strlen($bits)));
-        $barcodeWidth = strlen($bits) * $moduleWidth;
-        $offsetX = $x + max(0, intdiv($maxWidth - $barcodeWidth, 2));
-
-        imagefilledrectangle($image, $x, $y, $x + $maxWidth - 1, $y + $barHeight + 2, $white);
-
-        $cursor = $offsetX;
-        $bitsLength = strlen($bits);
-        for ($i = 0; $i < $bitsLength; $i++) {
-            if ($bits[$i] === '1') {
-                imagefilledrectangle($image, $cursor, $y, $cursor + $moduleWidth - 1, $y + $barHeight, $black);
-            }
-            $cursor += $moduleWidth;
-        }
-    }
-
     /**
      * @return list<int>
      */
@@ -377,32 +306,6 @@ final class HpBatchPdfService
         $codes[] = 106;
 
         return $codes;
-    }
-
-    private function normalizeUpca(string $value): string
-    {
-        if (!preg_match('/^\d{11,12}$/', $value)) {
-            throw new RuntimeException('UPCA values must be 11 or 12 digits.');
-        }
-
-        if (strlen($value) === 12) {
-            return $value;
-        }
-
-        $odd = 0;
-        $even = 0;
-        for ($i = 0; $i < 11; $i++) {
-            $digit = (int) $value[$i];
-            if ($i % 2 === 0) {
-                $odd += $digit;
-            } else {
-                $even += $digit;
-            }
-        }
-
-        $sum = ($odd * 3) + $even;
-        $checkDigit = (10 - ($sum % 10)) % 10;
-        return $value . (string) $checkDigit;
     }
 
     private function drawCenteredText(

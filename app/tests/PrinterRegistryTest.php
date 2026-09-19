@@ -35,13 +35,13 @@ if (($zebraBatch['chunkSize'] ?? null) !== 12) {
     exit(1);
 }
 
-if (($zebraBatch['defaultBarcodeType'] ?? null) !== 'UPCA') {
-    fwrite(STDERR, "Zebra batch default barcode type should be UPCA\n");
+if (($zebraBatch['defaultBarcodeType'] ?? null) !== 'CODE128') {
+    fwrite(STDERR, "Zebra batch default barcode type should be CODE128\n");
     exit(1);
 }
 
-if (!in_array('UPCA', (array) ($zebraBatch['recommendedBarcodeTypes'] ?? []), true)) {
-    fwrite(STDERR, "Zebra recommended batch types should include UPCA\n");
+if (!in_array('CODE128', (array) ($zebraBatch['recommendedBarcodeTypes'] ?? []), true)) {
+    fwrite(STDERR, "Zebra recommended batch types should include CODE128\n");
     exit(1);
 }
 

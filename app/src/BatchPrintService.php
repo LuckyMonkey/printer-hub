@@ -316,10 +316,6 @@ final class BatchPrintService
     private function validateBatchValues(array $values, string $barcodeType): void
     {
         foreach ($values as $value) {
-            if ($barcodeType === 'UPCA' && !preg_match('/^\d{11,12}$/', $value)) {
-                throw new RuntimeException(sprintf('Invalid UPC-A value in batch: "%s". UPC-A requires 11 or 12 digits.', $value));
-            }
-
             if ($barcodeType === 'QR' && strlen($value) > 300) {
                 throw new RuntimeException('QR values must be 300 characters or less.');
             }
@@ -342,9 +338,8 @@ final class BatchPrintService
         $type = strtoupper(trim($barcodeType));
         return match ($type) {
             'CODE128', '128' => 'CODE128',
-            'UPCA', 'UPC', 'UPC-A' => 'UPCA',
             'QR', 'QRCODE', 'QR-CODE' => 'QR',
-            default => throw new RuntimeException('barcodeType must be CODE128, UPCA, or QR.'),
+            default => throw new RuntimeException('barcodeType must be CODE128 or QR.'),
         };
     }
 

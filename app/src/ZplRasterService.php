@@ -26,34 +26,6 @@ final class ZplRasterService
         '114131', '311141', '411131', '211412', '211214', '211232', '2331112',
     ];
 
-    /** @var array<string,string> */
-    private const UPC_L_PATTERNS = [
-        '0' => '0001101',
-        '1' => '0011001',
-        '2' => '0010011',
-        '3' => '0111101',
-        '4' => '0100011',
-        '5' => '0110001',
-        '6' => '0101111',
-        '7' => '0111011',
-        '8' => '0110111',
-        '9' => '0001011',
-    ];
-
-    /** @var array<string,string> */
-    private const UPC_R_PATTERNS = [
-        '0' => '1110010',
-        '1' => '1100110',
-        '2' => '1101100',
-        '3' => '1000010',
-        '4' => '1011100',
-        '5' => '1001110',
-        '6' => '1010000',
-        '7' => '1000100',
-        '8' => '1001000',
-        '9' => '1110100',
-    ];
-
     /**
      * @param list<string> $values
      */
@@ -64,8 +36,8 @@ final class ZplRasterService
         }
 
         $symbology = strtolower(trim($symbology));
-        if (!in_array($symbology, ['code128', 'upc'], true)) {
-            throw new RuntimeException('Raster Z64 currently supports code128 and upc.');
+        if ($symbology !== 'code128') {
+            throw new RuntimeException('Raster Z64 supports code128.');
         }
 
         $image = imagecreate(self::LABEL_WIDTH, self::LABEL_HEIGHT);
@@ -139,22 +111,6 @@ final class ZplRasterService
         $labelTextTop = $y + 124;
         $cellWidth = 250;
         $safeText = $this->sanitizeText($value);
-
-        if ($symbology === 'upc') {
-            $upc = $this->normalizeUpc($safeText);
-            $this->drawUpcA(
-                image: $image,
-                x: $x,
-                y: $barcodeTop,
-                maxWidth: $barcodeWidth,
-                barHeight: $barcodeHeight,
-                upc: $upc,
-                black: $black,
-                white: $white
-            );
-            $this->drawCenteredText($image, $upc, $x, $labelTextTop, $cellWidth, 4, $black);
-            return;
-        }
 
         $this->drawCode128B(
             image: $image,
@@ -238,74 +194,6 @@ final class ZplRasterService
         $codes[] = 106; // Stop
 
         return $codes;
-    }
-
-    private function drawUpcA(
-        GdImage $image,
-        int $x,
-        int $y,
-        int $maxWidth,
-        int $barHeight,
-        string $upc,
-        int $black,
-        int $white
-    ): void {
-        $bits = '101';
-        for ($i = 0; $i < 6; $i++) {
-            $digit = $upc[$i];
-            $bits .= self::UPC_L_PATTERNS[$digit];
-        }
-        $bits .= '01010';
-        for ($i = 6; $i < 12; $i++) {
-            $digit = $upc[$i];
-            $bits .= self::UPC_R_PATTERNS[$digit];
-        }
-        $bits .= '101';
-
-        $moduleWidth = max(1, (int) floor($maxWidth / strlen($bits)));
-        $barcodeWidth = strlen($bits) * $moduleWidth;
-        $offsetX = $x + max(0, intdiv($maxWidth - $barcodeWidth, 2));
-
-        imagefilledrectangle($image, $x, $y, $x + $maxWidth - 1, $y + $barHeight + 2, $white);
-
-        $cursor = $offsetX;
-        $bitsLength = strlen($bits);
-        for ($i = 0; $i < $bitsLength; $i++) {
-            if ($bits[$i] === '1') {
-                imagefilledrectangle($image, $cursor, $y, $cursor + $moduleWidth - 1, $y + $barHeight, $black);
-            }
-            $cursor += $moduleWidth;
-        }
-    }
-
-    private function normalizeUpc(string $value): string
-    {
-        if (!preg_match('/^\d{11,12}$/', $value)) {
-            throw new RuntimeException('UPC values must be 11 or 12 digits.');
-        }
-
-        if (strlen($value) === 12) {
-            return $value;
-        }
-
-        return $value . (string) $this->upcCheckDigit($value);
-    }
-
-    private function upcCheckDigit(string $elevenDigits): int
-    {
-        $odd = 0;
-        $even = 0;
-        for ($i = 0; $i < 11; $i++) {
-            $digit = (int) $elevenDigits[$i];
-            if ($i % 2 === 0) {
-                $odd += $digit;
-            } else {
-                $even += $digit;
-            }
-        }
-
-        $sum = ($odd * 3) + $even;
-        return (10 - ($sum % 10)) % 10;
     }
 
     private function drawCenteredText(

@@ -40,8 +40,8 @@ final class JobService
             throw new RuntimeException('Unknown template selected.');
         }
 
-        if (!in_array($symbology, ['code128', 'qr', 'upc'], true)) {
-            throw new RuntimeException('Symbology must be code128, qr, or upc.');
+        if (!in_array($symbology, ['code128', 'qr'], true)) {
+            throw new RuntimeException('Symbology must be code128 or qr.');
         }
 
         $values = $this->normalizeValues($payload);

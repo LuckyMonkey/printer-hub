@@ -8,6 +8,18 @@ use RuntimeException;
 final class ZebraLabelService
 {
     /**
+     * Symbologies this service will emit.
+     *
+     * Both carry arbitrary operator-assigned payloads, which is what asset and
+     * inventory tagging needs. Retail symbologies (UPC-A, EAN-13) are absent by
+     * design: they encode a GS1-assigned manufacturer prefix, so they cannot be
+     * self-assigned for your own items in the first place.
+     *
+     * @var list<string>
+     */
+    private const SUPPORTED_BARCODE_TYPES = ['CODE128', 'QR'];
+
+    /**
      * @param list<string> $values
      */
     public function buildBatchGridZpl(string $labelType, string $barcodeType, array $values): string
@@ -15,6 +27,18 @@ final class ZebraLabelService
         $barcodeType = strtoupper(trim($barcodeType));
         $labelType = strtolower(trim($labelType));
         $count = count($values);
+
+        // Reject unknown symbologies rather than quietly falling through to the
+        // Code 128 default: asking for one barcode and silently being handed a
+        // different one is the kind of bug that is only noticed after a batch of
+        // labels has already been printed and stuck to things.
+        if (!in_array($barcodeType, self::SUPPORTED_BARCODE_TYPES, true)) {
+            throw new RuntimeException(sprintf(
+                'Unsupported barcodeType "%s". Supported: %s.',
+                $barcodeType,
+                implode(', ', self::SUPPORTED_BARCODE_TYPES)
+            ));
+        }
 
         if ($count < 1 || $count > 12) {
             throw new RuntimeException('Zebra batch grid requires 1 to 12 values per label.');
@@ -43,9 +67,6 @@ final class ZebraLabelService
                 continue;
             }
 
-            if ($barcodeType === 'UPCA') {
-                $safeValue = $this->normalizeUpca($safeValue);
-            }
 
             $row = intdiv($index, 2);
             $col = $index % 2;
@@ -62,12 +83,6 @@ final class ZebraLabelService
                 continue;
             }
 
-            if ($barcodeType === 'UPCA') {
-                $lines[] = '^BY2,2,64';
-                $lines[] = sprintf('^FO%d,%d^BUN,64,N,N^FD%s^FS', $x + 12, $y + 28, $safeValue);
-                $lines[] = sprintf('^FO%d,%d^A0N,20,18^FD%s^FS', $x + 12, $y + 118, $safeValue);
-                continue;
-            }
 
             $lines[] = '^BY2,2,64';
             $lines[] = sprintf('^FO%d,%d^BCN,64,N,N,N^FD%s^FS', $x + 12, $y + 28, $safeValue);
@@ -91,9 +106,6 @@ final class ZebraLabelService
 
         $safeText = $this->sanitize($textLine1 ?? '');
 
-        if ($barcodeType === 'UPCA') {
-            $safeValue = $this->normalizeUpca($safeValue);
-        }
 
         if ($labelType === 'status-tag') {
             return $this->buildStatusTag($barcodeType, $safeValue, $safeText);
@@ -156,12 +168,6 @@ final class ZebraLabelService
             ];
         }
 
-        if ($barcodeType === 'UPCA') {
-            return [
-                '^BY2,2,120',
-                sprintf('^FO%d,%d^BUN,120,Y,N^FD%s^FS', $x, $y, $barcodeValue),
-            ];
-        }
 
         return [
             '^BY2,2,120',
@@ -178,30 +184,4 @@ final class ZebraLabelService
         return $value;
     }
 
-    private function normalizeUpca(string $value): string
-    {
-        if (!preg_match('/^\d{11,12}$/', $value)) {
-            throw new RuntimeException('UPCA requires 11 or 12 digits.');
-        }
-
-        if (strlen($value) === 12) {
-            return $value;
-        }
-
-        $odd = 0;
-        $even = 0;
-        for ($i = 0; $i < 11; $i++) {
-            $digit = (int) $value[$i];
-            if ($i % 2 === 0) {
-                $odd += $digit;
-            } else {
-                $even += $digit;
-            }
-        }
-
-        $sum = ($odd * 3) + $even;
-        $checkDigit = (10 - ($sum % 10)) % 10;
-
-        return $value . (string) $checkDigit;
-    }
 }

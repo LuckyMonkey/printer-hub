@@ -65,7 +65,7 @@ final class PrintWorkflowService
                 self::PRINTER_ZEBRA => 12,
                 self::PRINTER_HP => 30,
             ],
-            'symbology' => ['code128', 'qr', 'upc'],
+            'symbology' => ['code128', 'qr'],
             'zebraRenderModes' => [
                 self::ZEBRA_RENDER_AUTO,
                 self::ZEBRA_RENDER_Z64,
@@ -279,18 +279,12 @@ final class PrintWorkflowService
     private function validatedValues(array $values, string $symbology): array
     {
         $symbology = strtolower(trim($symbology));
-        if (!in_array($symbology, ['code128', 'qr', 'upc'], true)) {
-            throw new RuntimeException('Symbology must be code128, qr, or upc.');
+        if (!in_array($symbology, ['code128', 'qr'], true)) {
+            throw new RuntimeException('Symbology must be code128 or qr.');
         }
 
         if ($values === []) {
             throw new RuntimeException('At least one barcode value is required.');
-        }
-
-        foreach ($values as $value) {
-            if ($symbology === 'upc' && !preg_match('/^\d{11,12}$/', $value)) {
-                throw new RuntimeException('UPC values must be 11 or 12 digits.');
-            }
         }
 
         return $values;
@@ -323,13 +317,6 @@ final class PrintWorkflowService
             if ($symbology === 'qr') {
                 $lines[] = sprintf('^FO%d,%d^BQN,2,3^FDLA,%s^FS', $x, $y + 4, $safe);
                 $lines[] = sprintf('^FO%d,%d^A0N,20,20^FD%s^FS', $x, $y + 132, $safe);
-                continue;
-            }
-
-            if ($symbology === 'upc') {
-                $lines[] = '^BY2,2,58';
-                $lines[] = sprintf('^FO%d,%d^BUN,58,N,N^FD%s^FS', $x, $y + 8, $safe);
-                $lines[] = sprintf('^FO%d,%d^A0N,20,20^FD%s^FS', $x, $y + 122, $safe);
                 continue;
             }
 

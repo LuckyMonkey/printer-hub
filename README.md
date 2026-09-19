@@ -30,12 +30,12 @@ docker-compose up -d --build
 
 Each printer page has:
 - label type selector
-- barcode type selector (`CODE128`, `UPCA`, `QR`)
+- barcode type selector (`CODE128`, `QR`)
 - `barcodeValue`, optional `textLine1`, `copies`
 - `Print` button + `Test` button
 - status polling (`queued`, `sending`, `sent`/printed, `error`)
 - guided batch printing controls with live counts, duplicate warnings, and chunk/page estimates
-- Zebra batch mode defaults to `UPCA` and normalizes 11-digit UPC-A values before submit
+- Zebra batch mode defaults to `CODE128`; values are printed exactly as entered
 - Zebra QR labels are rasterized before dispatch for more reliable ZP-505 output
 - Zebra `business-card` labels expect `textLine1 = name` and `barcodeValue = link URL`
 
@@ -68,15 +68,15 @@ curl -sS -X POST http://localhost:8088/api/print/zebra/image \
   -F 'copies=1'
 ```
 
-Batch Zebra UPC example:
+Batch Zebra example:
 ```bash
 curl -sS -X POST http://localhost:8088/api/batches/save-print-early \
   -H 'Content-Type: application/json' \
   -d '{
     "printerId": "zebra-zp505",
     "labelType": "waco-id",
-    "barcodeType": "UPCA",
-    "input": "036000291452\n012345678905\n051000012517"
+    "barcodeType": "CODE128",
+    "input": "ASSET-0001\n012345678905\n051000012517"
   }'
 ```
 

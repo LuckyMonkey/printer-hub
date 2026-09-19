@@ -127,7 +127,6 @@ final class PrinterRegistry
                     'title' => (string) ($batch['title'] ?? ''),
                     'helperText' => (string) ($batch['helperText'] ?? ''),
                     'inputHint' => (string) ($batch['inputHint'] ?? ''),
-                    'upcaHint' => (string) ($batch['upcaHint'] ?? ''),
                 ],
             ];
         }

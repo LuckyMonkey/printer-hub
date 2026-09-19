@@ -53,8 +53,8 @@ Body:
 {
   "printerId": "zebra-zp505",
   "labelType": "waco-id",
-  "barcodeType": "UPCA",
-  "input": "036000291452\n012345678905\n051000012517"
+  "barcodeType": "CODE128",
+  "input": "ASSET-0001\n012345678905\n051000012517"
 }
 ```
 
@@ -64,7 +64,6 @@ Behavior:
 - Zebra batches are chunked into groups of 12 labels
 - HP batches are chunked into groups of 30 labels
 - Brother batch mode sends one label per queued value
-- `UPCA` accepts 11 or 12 digits per value
 
 Success response:
 ```json
@@ -74,7 +73,7 @@ Success response:
   "count": 3,
   "sentCount": 1,
   "errorCount": 0,
-  "barcodeType": "UPCA",
+  "barcodeType": "CODE128",
   "rules": {
     "singleSymbologyPerBatch": true,
     "chunkSize": 12,
@@ -167,8 +166,7 @@ Notes:
 ## Validation Rules
 - `printerId`: one of `zebra-zp505`, `brother-ql820`, `hp-envy-5055`
 - `labelType`: must exist for selected printer
-- `barcodeType`: `CODE128`, `UPCA`, `QR`
-- `UPCA`: 11 or 12 digits
+- `barcodeType`: `CODE128`, `QR`
 - Zebra `business-card`: requires `barcodeType=QR`, non-empty `textLine1`, and a valid URL in `barcodeValue`
 - `copies`: `1..250`
 - batch submission size: `1..120` values by default, subject to per-printer config

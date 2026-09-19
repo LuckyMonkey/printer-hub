@@ -382,8 +382,8 @@ final class MultiPrinterPrintService
         }
 
         $barcodeType = strtoupper(trim((string) ($payload['barcodeType'] ?? 'CODE128')));
-        if (!in_array($barcodeType, ['CODE128', 'UPCA', 'QR'], true)) {
-            throw new RuntimeException('barcodeType must be CODE128, UPCA, or QR.');
+        if (!in_array($barcodeType, ['CODE128', 'QR'], true)) {
+            throw new RuntimeException('barcodeType must be CODE128 or QR.');
         }
 
         $capabilities = is_array($printer['capabilities'] ?? null) ? $printer['capabilities'] : [];
@@ -400,10 +400,6 @@ final class MultiPrinterPrintService
         $maxBarcodeLength = (int) ($capabilities['maxBarcodeLength'] ?? 120);
         if (strlen($barcodeValue) > $maxBarcodeLength) {
             throw new RuntimeException(sprintf('barcodeValue exceeds max length (%d).', $maxBarcodeLength));
-        }
-
-        if ($barcodeType === 'UPCA' && !preg_match('/^\d{11,12}$/', $barcodeValue)) {
-            throw new RuntimeException('UPCA barcodeValue must be 11 or 12 digits.');
         }
 
         if ($barcodeType === 'QR' && strlen($barcodeValue) > 300) {

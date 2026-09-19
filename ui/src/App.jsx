@@ -90,10 +90,6 @@ function validateForm(printer, form) {
     return 'Copies must be an integer from 1 to 250.';
   }
 
-  if (form.barcodeType === 'UPCA' && !/^\d{11,12}$/.test(form.barcodeValue.trim())) {
-    return 'UPCA requires 11 or 12 digits.';
-  }
-
   const maxBarcodeLength = Number(printer?.capabilities?.maxBarcodeLength || 120);
   if (form.barcodeValue.trim().length > maxBarcodeLength) {
     return `Barcode value exceeds max length (${maxBarcodeLength}).`;
@@ -126,31 +122,6 @@ function splitBatchValues(raw) {
     .filter(Boolean);
 }
 
-function normalizeUpcaValue(value) {
-  if (!/^\d{11,12}$/.test(value)) {
-    return null;
-  }
-
-  if (value.length === 12) {
-    return value;
-  }
-
-  let odd = 0;
-  let even = 0;
-  for (let index = 0; index < 11; index += 1) {
-    const digit = Number(value[index]);
-    if (index % 2 === 0) {
-      odd += digit;
-    } else {
-      even += digit;
-    }
-  }
-
-  const sum = (odd * 3) + even;
-  const checkDigit = (10 - (sum % 10)) % 10;
-  return `${value}${checkDigit}`;
-}
-
 function pickDefaultBatchType(printer) {
   const supported = Array.isArray(printer?.capabilities?.barcodeTypes)
     ? printer.capabilities.barcodeTypes
@@ -178,19 +149,7 @@ function analyzeBatchInput(input, barcodeType, batchConfig) {
   const maxValues = Math.max(1, Number(batchConfig?.maxValues || 120));
   const chunkSize = Math.max(1, Number(batchConfig?.chunkSize || 1));
   const invalidValues = [];
-  const normalizedValues = values.map((value) => {
-    if (barcodeType !== 'UPCA') {
-      return value;
-    }
-
-    const normalized = normalizeUpcaValue(value);
-    if (!normalized) {
-      invalidValues.push(value);
-      return value;
-    }
-
-    return normalized;
-  });
+  const normalizedValues = values;
 
   const counts = new Map();
   for (const value of normalizedValues) {
@@ -201,7 +160,7 @@ function analyzeBatchInput(input, barcodeType, batchConfig) {
     .filter(([, count]) => count > 1)
     .map(([value, count]) => ({ value, count }));
 
-  const printableValues = barcodeType === 'UPCA' ? normalizedValues : values;
+  const printableValues = values;
   const count = printableValues.length;
   const chunkCount = count === 0 ? 0 : Math.ceil(count / chunkSize);
   const remainder = count === 0 ? 0 : count - ((chunkCount - 1) * chunkSize);
@@ -235,9 +194,6 @@ function batchCapabilityLabel(printer) {
 }
 
 function batchActionLabel(printer, batchType) {
-  if (printer?.printerId === 'zebra-zp505' && batchType === 'UPCA') {
-    return 'Print Zebra UPC Batch';
-  }
   if (printer?.printerId === 'zebra-zp505') {
     return 'Print Zebra Batch';
   }
@@ -530,7 +486,7 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
     }
 
     if (batchAnalysis.invalidValues.length > 0) {
-      setBatchMessage(`Fix invalid UPC-A values before printing: ${batchAnalysis.invalidValues.slice(0, 3).join(', ')}`);
+      setBatchMessage(`Fix invalid values before printing: ${batchAnalysis.invalidValues.slice(0, 3).join(', ')}`);
       return;
     }
 
@@ -589,7 +545,7 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
       return `Reduce the list to ${batchMaxValues} values or fewer.`;
     }
     if (batchAnalysis.invalidValues.length > 0) {
-      return `Found ${batchAnalysis.invalidValues.length} invalid UPC-A value${batchAnalysis.invalidValues.length === 1 ? '' : 's'}.`;
+      return `Found ${batchAnalysis.invalidValues.length} invalid value${batchAnalysis.invalidValues.length === 1 ? '' : 's'}.`;
     }
     if (batchAnalysis.duplicates.length > 0) {
       return `Ready to print, but ${batchAnalysis.duplicates.length} value${batchAnalysis.duplicates.length === 1 ? ' is' : 's are'} duplicated.`;
@@ -799,7 +755,7 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
                   onClick={() => setBatchType(type)}
                   disabled={batchPrinting || batchType === type}
                 >
-                  {type === 'UPCA' ? 'UPC-A' : type}
+                  {type}
                 </button>
               ))}
               <button
@@ -835,13 +791,10 @@ function PrinterPage({ printer, cupsQueues, onBack }) {
               className={`${INPUT_CLASS} min-h-56`}
               value={batchInput}
               onChange={(e) => setBatchInput(e.target.value)}
-              placeholder={'036000291452\n036000291469\nor comma separated values'}
+              placeholder={'ASSET-0001\nASSET-0002\nor comma separated values'}
             />
             <div className="mt-3 flex flex-wrap gap-3 text-xs text-[#2b2b2b]">
               <span>{printer?.batch?.inputHint || 'Newlines and commas are both accepted.'}</span>
-              {batchType === 'UPCA' ? (
-                <span>{printer?.batch?.upcaHint || 'UPC-A accepts 11 or 12 digits.'}</span>
-              ) : null}
             </div>
           </div>
 
