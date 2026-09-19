@@ -94,8 +94,8 @@ if (str_starts_with($path, '/api/zpl/')) {
     exit;
 }
 
-if ($path === '/zpl' || $path === '/zpl/') {
-    $page = __DIR__ . '/zpl/index.html';
+if ($path === '/zpl' || $path === '/zpl/' || $path === '/zpl/editor' || $path === '/zpl/editor/') {
+    $page = __DIR__ . (str_contains($path, 'editor') ? '/zpl/editor.html' : '/zpl/index.html');
     if (is_file($page)) {
         header('Content-Type: text/html; charset=utf-8');
         readfile($page);

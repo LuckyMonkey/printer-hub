@@ -124,6 +124,34 @@ check('JSON body accepted', $r['status'] === 200 && str_starts_with($r['body'], 
 check('JSON body options applied', str_contains($r['headers'], 'X-Label-Dots: 304x152'),
     'expected 304x152');
 
+// --- the designer's contract: field boxes come back in a header ------------
+$r = request('POST', "{$base}/api/zpl/render?dpmm=8&w=4&h=6",
+    "^XA^FO10,10^GB50,50,3^FS^FO200,200^A0N,30,30^FDtwo^FS^XZ");
+check('field boxes returned in a header', str_contains($r['headers'], 'X-Zpl-Fields'),
+    'no X-Zpl-Fields header');
+preg_match('/X-Zpl-Fields:\s*(\[.*?\])\r?\n/i', $r['headers'], $fm);
+$fields = $fm ? json_decode($fm[1], true) : null;
+check('two boxes, in draw order, as compact arrays',
+    is_array($fields) && count($fields) === 2 && $fields[0][0] === 10 && $fields[1][0] === 200,
+    $fm[1] ?? 'unparsed');
+
+// --- the visual designer is served ------------------------------------------
+$r = request('GET', "{$base}/zpl/editor");
+check('designer page served', $r['status'] === 200 && str_contains($r['body'], 'ZPL Designer'),
+    (string) $r['status']);
+
+// Build the probe image here rather than committing a binary fixture.
+$probe = imagecreatetruecolor(8, 8);
+imagefilledrectangle($probe, 0, 0, 7, 7, (int) imagecolorallocate($probe, 0, 0, 0));
+ob_start();
+imagepng($probe);
+$probePng = (string) ob_get_clean();
+imagedestroy($probe);
+
+$r = request('POST', "{$base}/api/zpl/image?w=40", $probePng);
+check('image endpoint returns a graphic field',
+    $r['status'] === 200 && str_contains($r['body'], '^GFA,'), (string) $r['status']);
+
 // --- the preview must not need the database --------------------------------
 check('no database was required', !str_contains($r['body'], 'PDOException'));
 

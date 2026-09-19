@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZPL Designer — Printer Hub</title>
+<style>
+  :root {
+    --bg:#f4f4f2; --panel:#fff; --ink:#1a1a1a; --muted:#6b6b6b; --line:#dcdcd6;
+    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.14); --bad:#b3261e; --warn:#8a6100;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#131313; --panel:#1b1b1b; --ink:#ededed; --muted:#9a9a9a; --line:#2e2e2e;
+      --accent:#7aa7f0; --accent-soft:rgba(122,167,240,.18); --bad:#f2837a; --warn:#e0b562;
+    }
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink); overflow:hidden;
+    font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  header {
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:9px 12px; background:var(--panel); border-bottom:1px solid var(--line);
+  }
+  header h1 { margin:0 10px 0 0; font-size:15px; }
+  .sep { width:1px; height:22px; background:var(--line); margin:0 4px; }
+  button, select, input {
+    background:var(--bg); color:var(--ink); border:1px solid var(--line);
+    border-radius:7px; padding:5px 9px; font:inherit; font-size:12px;
+  }
+  button { cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:default; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  input[type=number] { width:5em; }
+  label.f { display:flex; align-items:center; gap:5px; color:var(--muted); font-size:12px; }
+
+  main { display:grid; grid-template-columns:1fr 290px; height:calc(100vh - 47px); }
+  @media (max-width:820px){ main { grid-template-columns:1fr; height:auto; overflow:auto; } }
+
+  .stage {
+    overflow:auto; padding:24px; display:grid; place-items:start center;
+    background:repeating-conic-gradient(var(--line) 0% 25%, transparent 0% 50%) 50% / 14px 14px;
+  }
+  .paper { position:relative; background:#fff; box-shadow:0 3px 18px rgba(0,0,0,.3); }
+  .paper img { display:block; width:100%; height:auto; image-rendering:pixelated; }
+  .hit {
+    position:absolute; border:1px solid transparent; cursor:move;
+    /* A generous invisible target: thin text is hard to grab otherwise. */
+    min-width:8px; min-height:8px;
+  }
+  .hit:hover { border-color:var(--accent); background:var(--accent-soft); }
+  .hit.sel { border-color:var(--accent); background:var(--accent-soft); }
+  .hit.sel::after {
+    content:''; position:absolute; right:-4px; bottom:-4px; width:9px; height:9px;
+    background:var(--accent); border-radius:2px; cursor:nwse-resize;
+  }
+
+  aside { border-left:1px solid var(--line); background:var(--panel); overflow:auto; padding:12px; }
+  aside h2 {
+    margin:0 0 8px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted);
+  }
+  .row { display:flex; gap:6px; align-items:center; margin-bottom:7px; }
+  .row label { width:62px; color:var(--muted); font-size:12px; flex:none; }
+  .row input, .row select { flex:1; min-width:0; }
+  .empty { color:var(--muted); font-size:12px; padding:14px 0; }
+  .layers { list-style:none; margin:0 0 12px; padding:0; }
+  .layers li {
+    display:flex; align-items:center; gap:7px; padding:5px 7px; border-radius:6px; cursor:pointer;
+  }
+  .layers li:hover { background:var(--bg); }
+  .layers li.sel { background:var(--accent-soft); }
+  .layers .tag {
+    font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+    border:1px solid var(--line); border-radius:999px; padding:1px 6px;
+  }
+  .layers .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .status { padding:7px 12px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); background:var(--panel); }
+  .status.err { color:var(--bad); } .status.warn { color:var(--warn); }
+  details { margin-top:12px; }
+  summary { cursor:pointer; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+  textarea {
+    width:100%; height:190px; margin-top:8px; background:var(--bg); color:var(--ink);
+    border:1px solid var(--line); border-radius:7px; padding:8px; resize:vertical;
+    font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ZPL Designer</h1>
+  <a href="/zpl/" style="font-size:12px;color:var(--accent);margin-right:6px">Code editor &rarr;</a>
+  <button data-add="text">+ Text</button>
+  <button data-add="barcode">+ Barcode</button>
+  <button data-add="qr">+ QR</button>
+  <button data-add="box">+ Box</button>
+  <label class="f" title="Convert an image to a graphic field">
+    <span style="border:1px solid var(--line);border-radius:7px;padding:5px 9px;cursor:pointer">+ Image</span>
+    <input type="file" id="img" accept="image/*" hidden>
+  </label>
+  <span class="sep"></span>
+  <label class="f">dpmm
+    <select id="dpmm">
+      <option value="6">6</option><option value="8" selected>8</option>
+      <option value="12">12</option><option value="24">24</option>
+    </select>
+  </label>
+  <label class="f">w<input type="number" id="lw" value="4" min=".5" max="16" step=".25"></label>
+  <label class="f">h<input type="number" id="lh" value="6" min=".5" max="16" step=".25"></label>
+  <span class="sep"></span>
+  <label class="f"><input type="checkbox" id="snap" checked style="width:auto"> snap 10</label>
+  <span class="sep"></span>
+  <button id="dup" disabled>Duplicate</button>
+  <button id="del" disabled>Delete</button>
+  <span class="sep"></span>
+  <button id="copy" class="primary">Copy ZPL</button>
+</header>
+
+<main>
+  <div class="stage">
+    <div class="paper" id="paper"><img id="png" alt="Label preview"></div>
+  </div>
+
+  <aside>
+    <h2>Layers</h2>
+    <ul class="layers" id="layers"></ul>
+
+    <h2>Properties</h2>
+    <div id="props"><p class="empty">Nothing selected. Add an element, or click one on the label.</p></div>
+
+    <details id="zplbox">
+      <summary>Generated ZPL</summary>
+      <textarea id="zpl" readonly spellcheck="false"></textarea>
+    </details>
+  </aside>
+</main>
+
+<div class="status" id="status">Ready.</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------------------------------------------------------------------
+  // The document is the source of truth for EDITING; the ZPL it generates is
+  // the source of truth for WHAT PRINTS. The canvas never draws anything
+  // itself - it shows the server's render with drag handles on top - so the
+  // editor cannot drift away from what the printer will do.
+  // ---------------------------------------------------------------------
+  var doc = { els: [] };
+  var seq = 1;
+  var sel = null;
+  var scale = 1;
+  var boxes = [];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var paper = $('paper'), png = $('png'), status = $('status');
+  var dpmm = $('dpmm'), lw = $('lw'), lh = $('lh'), snap = $('snap');
+
+  function setStatus(t, k) { status.textContent = t; status.className = 'status' + (k ? ' ' + k : ''); }
+  function esc(s) { return String(s).replace(/\^/g, ' ').replace(/[\r\n]/g, ' '); }
+  function dots() { var d = Math.round(+dpmm.value * 25.4); return { w: Math.round(+lw.value * d), h: Math.round(+lh.value * d) }; }
+
+  var DEFAULTS = {
+    text:    function () { return { type:'text', x:40, y:40, rot:'N', text:'Text', size:40 }; },
+    barcode: function () { return { type:'barcode', x:40, y:40, rot:'N', sym:'code128', data:'ASSET-0001', height:90, module:3, line:true }; },
+    qr:      function () { return { type:'qr', x:40, y:40, rot:'N', data:'https://fridge.run', ec:'M', mag:5 }; },
+    box:     function () { return { type:'box', x:40, y:40, w:300, h:120, thickness:4 }; },
+    image:   function () { return { type:'image', x:40, y:40, rot:'N', gf:'', label:'image' }; }
+  };
+
+  // ---- document -> ZPL --------------------------------------------------
+  function elZpl(e) {
+    var at = '^FO' + Math.round(e.x) + ',' + Math.round(e.y);
+    if (e.type === 'text')    { return at + '^A0' + e.rot + ',' + e.size + ',' + e.size + '^FD' + esc(e.text) + '^FS'; }
+    if (e.type === 'box')     { return at + '^GB' + Math.round(e.w) + ',' + Math.round(e.h) + ',' + e.thickness + '^FS'; }
+    if (e.type === 'qr')      { return at + '^BQ' + e.rot + ',2,' + e.mag + '^FD' + e.ec + 'A,' + esc(e.data) + '^FS'; }
+    if (e.type === 'image')   { return e.gf ? at + e.gf + '^FS' : ''; }
+    if (e.type === 'barcode') {
+      var by = '^BY' + e.module + ',3,' + e.height;
+      return e.sym === 'code39'
+        ? by + at + '^B3' + e.rot + ',N,' + e.height + ',' + (e.line ? 'Y' : 'N') + ',N^FD' + esc(e.data) + '^FS'
+        : by + at + '^BC' + e.rot + ',' + e.height + ',' + (e.line ? 'Y' : 'N') + ',N,N^FD' + esc(e.data) + '^FS';
+    }
+    return '';
+  }
+
+  function toZpl() {
+    var d = dots();
+    var out = ['^XA', '^PW' + d.w, '^LL' + d.h];
+    doc.els.forEach(function (e) { var z = elZpl(e); if (z) { out.push(z); } });
+    out.push('^XZ');
+    return out.join('\n');
+  }
+
+  // ---- render -----------------------------------------------------------
+  var inflight = null, timer = null, lastUrl = null;
+
+  function render() {
+    var zpl = toZpl();
+    $('zpl').value = zpl;
+
+    if (inflight) { inflight.abort(); }
+    var ac = new AbortController(); inflight = ac;
+
+    fetch('/api/zpl/render?dpmm=' + dpmm.value + '&w=' + lw.value + '&h=' + lh.value, {
+      method:'POST', headers:{'Content-Type':'text/plain'}, body:zpl, signal:ac.signal
+    }).then(function (r) {
+      if (!r.ok) { return r.json().then(function (j) { throw new Error(j.error || ('HTTP ' + r.status)); }); }
+      var f = r.headers.get('X-Zpl-Fields');
+      var warn = r.headers.get('X-Zpl-Warnings');
+      return r.blob().then(function (b) { return { blob:b, fields:f ? JSON.parse(f) : [], warn:warn }; });
+    }).then(function (res) {
+      if (lastUrl) { URL.revokeObjectURL(lastUrl); }
+      lastUrl = URL.createObjectURL(res.blob);
+      png.onload = function () { layout(res.fields); };
+      png.src = lastUrl;
+      setStatus(res.warn ? ('Rendered. Not previewable: ' + res.warn) : 'Rendered.', res.warn ? 'warn' : null);
+    }).catch(function (e) {
+      if (e.name !== 'AbortError') { setStatus(e.message, 'err'); }
+    });
+  }
+
+  function schedule() { clearTimeout(timer); timer = setTimeout(render, 160); }
+
+  // ---- hit boxes over the real render -----------------------------------
+  //
+  // The server reports where it drew each field, in order. Elements that emit
+  // no ZPL (an image with no data yet) are skipped on both sides, so the two
+  // lists stay aligned.
+  function layout(fields) {
+    boxes = fields || [];
+    var d = dots();
+    scale = png.clientWidth / d.w;
+
+    Array.prototype.slice.call(paper.querySelectorAll('.hit')).forEach(function (n) { n.remove(); });
+
+    var drawn = doc.els.filter(function (e) { return elZpl(e) !== ''; });
+    drawn.forEach(function (e, i) {
+      var b = boxes[i];
+      if (!b) { return; }
+      var div = document.createElement('div');
+      div.className = 'hit' + (sel === e.id ? ' sel' : '');
+      div.style.left = (b[0] * scale) + 'px';
+      div.style.top = (b[1] * scale) + 'px';
+      div.style.width = Math.max(8, b[2] * scale) + 'px';
+      div.style.height = Math.max(8, b[3] * scale) + 'px';
+      div.dataset.id = e.id;
+      div.title = e.type;
+      paper.appendChild(div);
+    });
+  }
+
+  // ---- selection & panels ------------------------------------------------
+  function find(id) { return doc.els.filter(function (e) { return e.id === id; })[0]; }
+
+  function select(id) {
+    sel = id;
+    $('del').disabled = $('dup').disabled = !id;
+    Array.prototype.slice.call(paper.querySelectorAll('.hit')).forEach(function (n) {
+      n.classList.toggle('sel', +n.dataset.id === id);
+    });
+    drawLayers();
+    drawProps();
+  }
+
+  function drawLayers() {
+    var ul = $('layers');
+    ul.innerHTML = '';
+    if (!doc.els.length) { ul.innerHTML = '<li class="empty">No elements yet.</li>'; return; }
+    doc.els.forEach(function (e) {
+      var li = document.createElement('li');
+      li.className = (sel === e.id ? 'sel' : '');
+      var tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = e.type;
+      var nm = document.createElement('span'); nm.className = 'nm';
+      nm.textContent = e.type === 'box' ? (e.w + '×' + e.h) : (e.text || e.data || e.label || '');
+      li.appendChild(tag); li.appendChild(nm);
+      li.addEventListener('click', function () { select(e.id); });
+      ul.appendChild(li);
+    });
+  }
+
+  var FIELDS = {
+    text:    [['text','Text','text'], ['size','Size','number'], ['rot','Rotate','rot']],
+    barcode: [['data','Data','text'], ['sym','Symbology','sym'], ['height','Height','number'],
+              ['module','Module','number'], ['line','Caption','bool'], ['rot','Rotate','rot']],
+    qr:      [['data','Data','text'], ['ec','Correction','ec'], ['mag','Size','number'], ['rot','Rotate','rot']],
+    box:     [['w','Width','number'], ['h','Height','number'], ['thickness','Border','number']],
+    image:   [['rot','Rotate','rot']]
+  };
+
+  function drawProps() {
+    var host = $('props');
+    var e = find(sel);
+    if (!e) { host.innerHTML = '<p class="empty">Nothing selected. Add an element, or click one on the label.</p>'; return; }
+
+    host.innerHTML = '';
+    [['x','X','number'], ['y','Y','number']].concat(FIELDS[e.type] || []).forEach(function (f) {
+      var key = f[0], name = f[1], kind = f[2];
+      var row = document.createElement('div'); row.className = 'row';
+      var lab = document.createElement('label'); lab.textContent = name; row.appendChild(lab);
+
+      var input;
+      if (kind === 'rot' || kind === 'sym' || kind === 'ec') {
+        input = document.createElement('select');
+        var opts = kind === 'rot' ? [['N','0°'],['R','90°'],['I','180°'],['B','270°']]
+                 : kind === 'sym' ? [['code128','Code 128'],['code39','Code 39']]
+                 : [['L','L'],['M','M'],['Q','Q'],['H','H']];
+        opts.forEach(function (o) {
+          var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1];
+          if (e[key] === o[0]) { op.selected = true; }
+          input.appendChild(op);
+        });
+      } else if (kind === 'bool') {
+        input = document.createElement('input'); input.type = 'checkbox'; input.checked = !!e[key];
+        input.style.flex = 'none';
+      } else {
+        input = document.createElement('input'); input.type = kind; input.value = e[key];
+      }
+
+      input.addEventListener('input', function () {
+        e[key] = kind === 'bool' ? input.checked : (kind === 'number' ? (+input.value || 0) : input.value);
+        drawLayers(); schedule();
+      });
+      row.appendChild(input);
+      host.appendChild(row);
+    });
+  }
+
+  // ---- add / remove ------------------------------------------------------
+  function add(type, extra) {
+    var e = DEFAULTS[type]();
+    if (extra) { Object.keys(extra).forEach(function (k) { e[k] = extra[k]; }); }
+    e.id = seq++;
+    doc.els.push(e);
+    select(e.id);
+    schedule();
+    return e;
+  }
+
+  Array.prototype.slice.call(document.querySelectorAll('[data-add]')).forEach(function (b) {
+    b.addEventListener('click', function () { add(b.dataset.add); });
+  });
+
+  $('del').addEventListener('click', function () {
+    doc.els = doc.els.filter(function (e) { return e.id !== sel; });
+    select(null); schedule();
+  });
+
+  $('dup').addEventListener('click', function () {
+    var e = find(sel);
+    if (!e) { return; }
+    var c = JSON.parse(JSON.stringify(e));
+    c.id = seq++; c.x += 20; c.y += 20;
+    doc.els.push(c); select(c.id); schedule();
+  });
+
+  $('copy').addEventListener('click', function () {
+    var t = toZpl();
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(t).then(function () { setStatus('ZPL copied.'); },
+        function () { window.prompt('Copy the ZPL:', t); });
+    } else { window.prompt('Copy the ZPL:', t); }
+  });
+
+  // ---- dragging ----------------------------------------------------------
+  var drag = null;
+
+  paper.addEventListener('pointerdown', function (ev) {
+    var hit = ev.target.closest('.hit');
+    if (!hit) { select(null); return; }
+    var e = find(+hit.dataset.id);
+    if (!e) { return; }
+    select(e.id);
+
+    // The bottom-right corner resizes a box; everything else moves.
+    var r = hit.getBoundingClientRect();
+    var corner = e.type === 'box' && (ev.clientX > r.right - 12) && (ev.clientY > r.bottom - 12);
+
+    drag = { e:e, mode:corner ? 'size' : 'move', sx:ev.clientX, sy:ev.clientY,
+             ox:e.x, oy:e.y, ow:e.w, oh:e.h, node:hit };
+    hit.setPointerCapture(ev.pointerId);
+    ev.preventDefault();
+  });
+
+  paper.addEventListener('pointermove', function (ev) {
+    if (!drag) { return; }
+    var dx = (ev.clientX - drag.sx) / scale;
+    var dy = (ev.clientY - drag.sy) / scale;
+    var q = snap.checked ? 10 : 1;
+    var round = function (v) { return Math.round(v / q) * q; };
+
+    if (drag.mode === 'size') {
+      drag.e.w = Math.max(4, round(drag.ow + dx));
+      drag.e.h = Math.max(4, round(drag.oh + dy));
+      drag.node.style.width = (drag.e.w * scale) + 'px';
+      drag.node.style.height = (drag.e.h * scale) + 'px';
+    } else {
+      drag.e.x = Math.max(0, round(drag.ox + dx));
+      drag.e.y = Math.max(0, round(drag.oy + dy));
+      // Move the handle live; the authoritative render follows on release, so
+      // dragging stays smooth instead of waiting on a round trip per pixel.
+      drag.node.style.left = (drag.e.x * scale) + 'px';
+      drag.node.style.top = (drag.e.y * scale) + 'px';
+    }
+    ev.preventDefault();
+  });
+
+  ['pointerup', 'pointercancel'].forEach(function (t) {
+    paper.addEventListener(t, function () {
+      if (!drag) { return; }
+      drag = null;
+      drawProps(); drawLayers(); render();
+    });
+  });
+
+  // ---- keyboard ----------------------------------------------------------
+  document.addEventListener('keydown', function (ev) {
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) { return; }
+    var e = find(sel);
+    if (!e) { return; }
+    var step = ev.shiftKey ? 10 : 1;
+    var moved = true;
+    if (ev.key === 'ArrowLeft')       { e.x = Math.max(0, e.x - step); }
+    else if (ev.key === 'ArrowRight') { e.x += step; }
+    else if (ev.key === 'ArrowUp')    { e.y = Math.max(0, e.y - step); }
+    else if (ev.key === 'ArrowDown')  { e.y += step; }
+    else if (ev.key === 'Delete' || ev.key === 'Backspace') { $('del').click(); return; }
+    else { moved = false; }
+    if (moved) { ev.preventDefault(); drawProps(); schedule(); }
+  });
+
+  // ---- image import ------------------------------------------------------
+  $('img').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    this.value = '';
+    if (!f) { return; }
+    setStatus('Converting ' + f.name + '…');
+    fetch('/api/zpl/image?w=300&dither=1', {
+      method:'POST', headers:{'Content-Type':'application/octet-stream'}, body:f
+    }).then(function (r) {
+      return r.json().then(function (j) { if (!r.ok) { throw new Error(j.error); } return j; });
+    }).then(function (j) {
+      add('image', { gf:j.zpl, label:f.name });
+      setStatus('Added ' + j.width + '×' + j.height + ' image.');
+    }).catch(function (e) { setStatus(e.message, 'err'); });
+  });
+
+  [dpmm, lw, lh].forEach(function (n) { n.addEventListener('change', render); });
+  window.addEventListener('resize', function () { layout(boxes); });
+
+  // ---- a starting label so the canvas is never empty ---------------------
+  add('text', { x:40, y:36, text:'INVENTORY', size:48 });
+  add('text', { x:40, y:100, text:'Shelf B / Bin 14', size:28 });
+  add('barcode', { x:40, y:170, data:'ASSET-0001', height:100 });
+  add('qr', { x:560, y:170, data:'https://fridge.run/?f=YnG', mag:5 });
+  select(null);
+  render();
+})();
+</script>
+</body>
+</html>

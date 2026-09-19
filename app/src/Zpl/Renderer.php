@@ -31,6 +31,17 @@ final class Renderer
     /** @var list<string> */
     private array $warnings = [];
 
+    /**
+     * Where each committed field landed, in draw order.
+     *
+     * The renderer already knows this, so reporting it means an editor can put
+     * drag handles exactly on top of the real render instead of maintaining a
+     * second, approximate layout engine that would slowly drift out of step.
+     *
+     * @var list<array{x:int,y:int,w:int,h:int}>
+     */
+    private array $fields = [];
+
     // --- label state ---------------------------------------------------------
     private int $homeX = 0;
     private int $homeY = 0;
@@ -76,6 +87,16 @@ final class Renderer
     public function warnings(): array
     {
         return array_values(array_unique($this->warnings));
+    }
+
+    /**
+     * Bounding boxes of the fields drawn, in order.
+     *
+     * @return list<array{x:int,y:int,w:int,h:int}>
+     */
+    public function fields(): array
+    {
+        return $this->fields;
     }
 
     public function render(string $zpl): string
@@ -462,14 +483,10 @@ final class Renderer
         $w = max($w, $t);
         $h = max($h, $t);
 
-        $this->canvas->box(
-            $this->fieldX + $this->homeX,
-            $this->fieldY + $this->homeY,
-            $w,
-            $h,
-            $t,
-            $this->fieldReverse
-        );
+        $bx = $this->fieldX + $this->homeX;
+        $by = $this->fieldY + $this->homeY;
+        $this->canvas->box($bx, $by, $w, $h, $t, $this->fieldReverse);
+        $this->fields[] = ['x' => $bx, 'y' => $by, 'w' => $w, 'h' => $h];
 
         // ^GB is self-contained: it consumes the field position it was given.
         $this->resetField();
@@ -527,6 +544,11 @@ final class Renderer
         if ($w === 0) {
             return;
         }
+
+        // A quarter turn swaps the footprint.
+        $this->fields[] = ($rot === 'R' || $rot === 'B')
+            ? ['x' => $x, 'y' => $y, 'w' => $h, 'h' => $w]
+            : ['x' => $x, 'y' => $y, 'w' => $w, 'h' => $h];
 
         foreach ($m as $dy => $row) {
             foreach ($row as $dx => $on) {

@@ -134,6 +134,17 @@ final class PreviewController
         if ($warnings !== []) {
             header('X-Zpl-Warnings: ' . implode(' ', array_slice($warnings, 0, 20)));
         }
+        // Field boxes, in draw order, so an editor can place drag handles on the
+        // real render. Compact arrays rather than objects: this rides in a
+        // header and a verbose encoding would blow the server's header limit on
+        // a busy label.
+        $boxes = array_map(
+            static fn (array $f): array => [$f['x'], $f['y'], $f['w'], $f['h']],
+            $renderer->fields()
+        );
+        if ($boxes !== []) {
+            header('X-Zpl-Fields: ' . json_encode($boxes));
+        }
         echo $png;
     }
 
