@@ -6,458 +6,885 @@
 <title>ZPL Designer — Printer Hub</title>
 <style>
   :root {
-    --bg:#f4f4f2; --panel:#fff; --ink:#1a1a1a; --muted:#6b6b6b; --line:#dcdcd6;
-    --accent:#1f5fd0; --accent-soft:rgba(31,95,208,.14); --bad:#b3261e; --warn:#8a6100;
+    --bg:#ececeb; --panel:#fbfbfa; --sunk:#f2f2f0; --ink:#17181a; --muted:#6c6f74;
+    --line:#d8d8d4; --line-soft:#e6e6e2;
+    --accent:#2563c9; --accent-soft:rgba(37,99,201,.13); --accent-ink:#fff;
+    --bad:#b3261e; --warn:#8a5d00; --ok:#1c7a43;
+    --shadow:0 1px 2px rgba(0,0,0,.07), 0 6px 18px rgba(0,0,0,.09);
+    --r:8px;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg:#131313; --panel:#1b1b1b; --ink:#ededed; --muted:#9a9a9a; --line:#2e2e2e;
-      --accent:#7aa7f0; --accent-soft:rgba(122,167,240,.18); --bad:#f2837a; --warn:#e0b562;
+      --bg:#111214; --panel:#191a1d; --sunk:#131416; --ink:#e9eaec; --muted:#9a9ea6;
+      --line:#2c2e33; --line-soft:#232529;
+      --accent:#6fa0f5; --accent-soft:rgba(111,160,245,.16); --accent-ink:#0d1117;
+      --bad:#f0857c; --warn:#e2b25c; --ok:#5fcf8e;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.45);
     }
   }
+  :root[data-theme="dark"] {
+    --bg:#111214; --panel:#191a1d; --sunk:#131416; --ink:#e9eaec; --muted:#9a9ea6;
+    --line:#2c2e33; --line-soft:#232529;
+    --accent:#6fa0f5; --accent-soft:rgba(111,160,245,.16); --accent-ink:#0d1117;
+    --bad:#f0857c; --warn:#e2b25c; --ok:#5fcf8e;
+  }
+
   * { box-sizing:border-box; }
+  html, body { height:100%; }
   body {
     margin:0; background:var(--bg); color:var(--ink); overflow:hidden;
-    font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased;
   }
-  header {
-    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-    padding:9px 12px; background:var(--panel); border-bottom:1px solid var(--line);
-  }
-  header h1 { margin:0 10px 0 0; font-size:15px; }
-  .sep { width:1px; height:22px; background:var(--line); margin:0 4px; }
-  button, select, input {
-    background:var(--bg); color:var(--ink); border:1px solid var(--line);
-    border-radius:7px; padding:5px 9px; font:inherit; font-size:12px;
-  }
-  button { cursor:pointer; }
-  button:hover:not(:disabled) { border-color:var(--accent); }
-  button:disabled { opacity:.45; cursor:default; }
-  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-  input[type=number] { width:5em; }
-  label.f { display:flex; align-items:center; gap:5px; color:var(--muted); font-size:12px; }
+  svg { display:block; }
 
-  main { display:grid; grid-template-columns:1fr 290px; height:calc(100vh - 47px); }
-  @media (max-width:820px){ main { grid-template-columns:1fr; height:auto; overflow:auto; } }
+  /* ---------- chrome ---------- */
+  .app { display:grid; grid-template-rows:auto 1fr auto; height:100vh; }
 
+  .bar {
+    display:flex; align-items:center; gap:4px; padding:7px 10px;
+    background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap;
+  }
+  .bar .brand { font-weight:650; font-size:14px; letter-spacing:.01em; margin-right:6px; white-space:nowrap; }
+  .bar .brand small { font-weight:400; color:var(--muted); font-size:11px; margin-left:5px; }
+  .grow { flex:1; }
+  .div { width:1px; align-self:stretch; background:var(--line); margin:2px 5px; }
+
+  .grp { display:flex; gap:2px; background:var(--sunk); border:1px solid var(--line-soft); border-radius:var(--r); padding:2px; }
+
+  .btn {
+    display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+    background:transparent; color:var(--ink); border:1px solid transparent;
+    border-radius:6px; padding:5px 8px; font:inherit; font-size:12px; cursor:pointer;
+  }
+  .btn:hover:not(:disabled) { background:var(--accent-soft); }
+  .btn[aria-pressed="true"] { background:var(--accent); color:var(--accent-ink); }
+  .btn:disabled { opacity:.35; cursor:default; }
+  .btn.solid { background:var(--accent); color:var(--accent-ink); padding:6px 12px; font-weight:550; }
+  .btn.solid:hover { filter:brightness(1.08); background:var(--accent); }
+  .btn.icon { padding:6px; }
+
+  .fld { display:inline-flex; align-items:center; gap:5px; color:var(--muted); font-size:12px; }
+  input, select {
+    background:var(--panel); color:var(--ink); border:1px solid var(--line);
+    border-radius:6px; padding:5px 7px; font:inherit; font-size:12px;
+  }
+  input:focus, select:focus { outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent; }
+  input[type=number] { width:4.6em; }
+  input[type=checkbox] { width:auto; accent-color:var(--accent); }
+
+  /* ---------- body ---------- */
+  .work { display:grid; grid-template-columns:200px 1fr 272px; min-height:0; }
+  .rail { background:var(--panel); overflow:auto; display:flex; flex-direction:column; min-height:0; }
+  .rail.left { border-right:1px solid var(--line); }
+  .rail.right { border-left:1px solid var(--line); }
+
+  .sec { border-bottom:1px solid var(--line-soft); }
+  .sec > h2 {
+    margin:0; padding:9px 12px 7px; font-size:10.5px; font-weight:650;
+    text-transform:uppercase; letter-spacing:.09em; color:var(--muted);
+    display:flex; align-items:center; gap:7px;
+  }
+  .sec > h2 .grow { flex:1; }
+  .sec .body { padding:0 12px 12px; }
+
+  /* ---------- stage ---------- */
   .stage {
-    overflow:auto; padding:24px; display:grid; place-items:start center;
-    background:repeating-conic-gradient(var(--line) 0% 25%, transparent 0% 50%) 50% / 14px 14px;
+    position:relative; overflow:auto; background:var(--sunk);
+    display:grid; place-items:center; padding:30px;
   }
-  .paper { position:relative; background:#fff; box-shadow:0 3px 18px rgba(0,0,0,.3); }
-  .paper img { display:block; width:100%; height:auto; image-rendering:pixelated; }
-  .hit {
-    position:absolute; border:1px solid transparent; cursor:move;
-    /* A generous invisible target: thin text is hard to grab otherwise. */
-    min-width:8px; min-height:8px;
+  .stage::before {
+    content:''; position:absolute; inset:0; pointer-events:none;
+    background:repeating-conic-gradient(rgba(128,128,128,.10) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
   }
-  .hit:hover { border-color:var(--accent); background:var(--accent-soft); }
-  .hit.sel { border-color:var(--accent); background:var(--accent-soft); }
-  .hit.sel::after {
-    content:''; position:absolute; right:-4px; bottom:-4px; width:9px; height:9px;
-    background:var(--accent); border-radius:2px; cursor:nwse-resize;
+  .paper {
+    position:relative; background:#fff; box-shadow:var(--shadow);
+    outline:1px solid var(--line);
+  }
+  .paper img { display:block; width:100%; height:auto; image-rendering:pixelated; user-select:none; -webkit-user-drag:none; }
+
+  .hit { position:absolute; cursor:move; }
+  .hit::before {
+    content:''; position:absolute; inset:-3px; border:1px solid transparent; border-radius:2px;
+  }
+  .hit:hover::before { border-color:var(--accent); }
+  .hit.sel::before { border-color:var(--accent); background:var(--accent-soft); }
+  .hit .grip {
+    position:absolute; width:10px; height:10px; background:var(--panel);
+    border:1.5px solid var(--accent); border-radius:2px; display:none;
+  }
+  .hit.sel.resizable .grip { display:block; }
+  .hit .grip.se { right:-6px; bottom:-6px; cursor:nwse-resize; }
+
+  .marquee {
+    position:absolute; border:1px solid var(--accent); background:var(--accent-soft);
+    pointer-events:none; border-radius:2px;
   }
 
-  aside { border-left:1px solid var(--line); background:var(--panel); overflow:auto; padding:12px; }
-  aside h2 {
-    margin:0 0 8px; font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted);
-  }
-  .row { display:flex; gap:6px; align-items:center; margin-bottom:7px; }
-  .row label { width:62px; color:var(--muted); font-size:12px; flex:none; }
-  .row input, .row select { flex:1; min-width:0; }
-  .empty { color:var(--muted); font-size:12px; padding:14px 0; }
-  .layers { list-style:none; margin:0 0 12px; padding:0; }
+  /* ---------- layers ---------- */
+  .layers { list-style:none; margin:0; padding:4px 6px 10px; }
   .layers li {
-    display:flex; align-items:center; gap:7px; padding:5px 7px; border-radius:6px; cursor:pointer;
+    display:flex; align-items:center; gap:8px; padding:6px 7px; border-radius:6px;
+    cursor:pointer; border:1px solid transparent;
   }
-  .layers li:hover { background:var(--bg); }
-  .layers li.sel { background:var(--accent-soft); }
-  .layers .tag {
-    font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
-    border:1px solid var(--line); border-radius:999px; padding:1px 6px;
+  .layers li:hover { background:var(--sunk); }
+  .layers li.sel { background:var(--accent-soft); border-color:var(--accent); }
+  .layers .ico { color:var(--muted); flex:none; }
+  .layers li.sel .ico { color:var(--accent); }
+  .layers .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+  .layers .idx { color:var(--muted); font-size:10px; font-variant-numeric:tabular-nums; }
+
+  /* ---------- inspector ---------- */
+  .row { display:grid; grid-template-columns:64px 1fr; gap:7px; align-items:center; margin-bottom:7px; }
+  .row > label { color:var(--muted); font-size:11.5px; }
+  .row > .ctl { min-width:0; display:flex; gap:6px; align-items:center; }
+  .row input, .row select { width:100%; }
+  .pair { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .hint { color:var(--muted); font-size:11px; line-height:1.5; margin:2px 0 10px; }
+  .empty { color:var(--muted); font-size:12px; padding:16px 12px; text-align:center; }
+
+  .seg { display:flex; gap:2px; background:var(--sunk); border:1px solid var(--line-soft); border-radius:6px; padding:2px; }
+  .seg button {
+    flex:1; background:transparent; border:0; border-radius:4px; padding:5px 0;
+    font:inherit; font-size:11px; color:var(--ink); cursor:pointer;
   }
-  .layers .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .status { padding:7px 12px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); background:var(--panel); }
-  .status.err { color:var(--bad); } .status.warn { color:var(--warn); }
-  details { margin-top:12px; }
-  summary { cursor:pointer; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+  .seg button[aria-pressed="true"] { background:var(--accent); color:var(--accent-ink); }
+
+  /* ---------- status ---------- */
+  .status {
+    display:flex; align-items:center; gap:14px; padding:6px 12px;
+    background:var(--panel); border-top:1px solid var(--line); font-size:11.5px; color:var(--muted);
+  }
+  .status .msg { flex:1; }
+  .status.err .msg { color:var(--bad); }
+  .status.warn .msg { color:var(--warn); }
+  .status .num { font-variant-numeric:tabular-nums; }
+
+  kbd {
+    font:11px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--sunk);
+    border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 4px;
+  }
   textarea {
-    width:100%; height:190px; margin-top:8px; background:var(--bg); color:var(--ink);
-    border:1px solid var(--line); border-radius:7px; padding:8px; resize:vertical;
-    font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+    width:100%; height:150px; background:var(--sunk); color:var(--ink);
+    border:1px solid var(--line); border-radius:6px; padding:8px; resize:vertical;
+    font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width:1100px) { .work { grid-template-columns:0 1fr 250px; } .rail.left { display:none; } }
+  @media (max-width:760px) {
+    .work { grid-template-columns:1fr; grid-template-rows:1fr auto; }
+    .rail.right { border-left:0; border-top:1px solid var(--line); max-height:44vh; }
+    .bar .brand small, .btn .lbl { display:none; }
   }
 </style>
 </head>
 <body>
+<div class="app">
 
-<header>
-  <h1>ZPL Designer</h1>
-  <a href="/zpl/" style="font-size:12px;color:var(--accent);margin-right:6px">Code editor &rarr;</a>
-  <button data-add="text">+ Text</button>
-  <button data-add="barcode">+ Barcode</button>
-  <button data-add="qr">+ QR</button>
-  <button data-add="box">+ Box</button>
-  <label class="f" title="Convert an image to a graphic field">
-    <span style="border:1px solid var(--line);border-radius:7px;padding:5px 9px;cursor:pointer">+ Image</span>
-    <input type="file" id="img" accept="image/*" hidden>
-  </label>
-  <span class="sep"></span>
-  <label class="f">dpmm
-    <select id="dpmm">
-      <option value="6">6</option><option value="8" selected>8</option>
-      <option value="12">12</option><option value="24">24</option>
-    </select>
-  </label>
-  <label class="f">w<input type="number" id="lw" value="4" min=".5" max="16" step=".25"></label>
-  <label class="f">h<input type="number" id="lh" value="6" min=".5" max="16" step=".25"></label>
-  <span class="sep"></span>
-  <label class="f"><input type="checkbox" id="snap" checked style="width:auto"> snap 10</label>
-  <span class="sep"></span>
-  <button id="dup" disabled>Duplicate</button>
-  <button id="del" disabled>Delete</button>
-  <span class="sep"></span>
-  <button id="copy" class="primary">Copy ZPL</button>
-</header>
+  <!-- ================= toolbar ================= -->
+  <div class="bar">
+    <span class="brand">ZPL Designer <small>Printer Hub</small></span>
 
-<main>
-  <div class="stage">
-    <div class="paper" id="paper"><img id="png" alt="Label preview"></div>
+    <div class="grp" role="group" aria-label="Add element">
+      <button class="btn" data-add="text" title="Add text (T)"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4V3h10v1M8 3v10M6 13h4"/></svg><span class="lbl">Text</span></button>
+      <button class="btn" data-add="barcode" title="Add barcode (B)"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="3" width="1.4" height="10"/><rect x="4.4" y="3" width="0.8" height="10"/><rect x="6" y="3" width="1.8" height="10"/><rect x="8.6" y="3" width="0.8" height="10"/><rect x="10.2" y="3" width="1.4" height="10"/><rect x="12.4" y="3" width="0.8" height="10"/></svg><span class="lbl">Barcode</span></button>
+      <button class="btn" data-add="qr" title="Add QR code (Q)"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="2.5" width="4" height="4"/><rect x="9.5" y="2.5" width="4" height="4"/><rect x="2.5" y="9.5" width="4" height="4"/><path d="M9.5 9.5h2v2h2v2" stroke-width="1.6"/></svg><span class="lbl">QR</span></button>
+      <button class="btn" data-add="box" title="Add box (R)"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="3.5" width="11" height="9"/></svg><span class="lbl">Box</span></button>
+      <button class="btn" id="addImg" title="Add image (I)"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="3.5" width="11" height="9"/><circle cx="6" cy="6.6" r="1.1"/><path d="M3 11l3-2.6 2.4 2 2.2-2.6L13 11"/></svg><span class="lbl">Image</span></button>
+      <input type="file" id="img" accept="image/*" hidden>
+    </div>
+
+    <div class="div"></div>
+
+    <div class="grp" role="group" aria-label="History">
+      <button class="btn icon" id="undo" title="Undo (Ctrl+Z)" disabled><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4L3 7l3 3"/><path d="M3 7h6.5A3.5 3.5 0 0 1 13 10.5v0A3.5 3.5 0 0 1 9.5 14H7"/></svg></button>
+      <button class="btn icon" id="redo" title="Redo (Ctrl+Shift+Z)" disabled><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4l3 3-3 3"/><path d="M13 7H6.5A3.5 3.5 0 0 0 3 10.5v0A3.5 3.5 0 0 0 6.5 14H9"/></svg></button>
+    </div>
+
+    <div class="grp" role="group" aria-label="Align">
+      <button class="btn icon align" data-align="left" title="Align left" disabled><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 2v12"/><rect x="4.5" y="4" width="8" height="2.6" fill="currentColor" stroke="none"/><rect x="4.5" y="9.4" width="5" height="2.6" fill="currentColor" stroke="none"/></svg></button>
+      <button class="btn icon align" data-align="hcenter" title="Align centres horizontally" disabled><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v12"/><rect x="3" y="4" width="10" height="2.6" fill="currentColor" stroke="none"/><rect x="4.8" y="9.4" width="6.4" height="2.6" fill="currentColor" stroke="none"/></svg></button>
+      <button class="btn icon align" data-align="right" title="Align right" disabled><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.5 2v12"/><rect x="3.5" y="4" width="8" height="2.6" fill="currentColor" stroke="none"/><rect x="6.5" y="9.4" width="5" height="2.6" fill="currentColor" stroke="none"/></svg></button>
+      <button class="btn icon align" data-align="top" title="Align top" disabled><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2.5h12"/><rect x="4" y="4.5" width="2.6" height="8" fill="currentColor" stroke="none"/><rect x="9.4" y="4.5" width="2.6" height="5" fill="currentColor" stroke="none"/></svg></button>
+      <button class="btn icon align" data-align="vcenter" title="Align centres vertically" disabled><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8h12"/><rect x="4" y="3" width="2.6" height="10" fill="currentColor" stroke="none"/><rect x="9.4" y="4.8" width="2.6" height="6.4" fill="currentColor" stroke="none"/></svg></button>
+      <button class="btn icon align" data-align="bottom" title="Align bottom" disabled><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 13.5h12"/><rect x="4" y="3.5" width="2.6" height="8" fill="currentColor" stroke="none"/><rect x="9.4" y="6.5" width="2.6" height="5" fill="currentColor" stroke="none"/></svg></button>
+    </div>
+
+    <div class="grp" role="group" aria-label="Order">
+      <button class="btn icon" id="front" title="Bring to front (])" disabled><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="2.5" width="8" height="8" fill="var(--panel)"/><rect x="5.5" y="5.5" width="8" height="8" fill="currentColor" opacity=".85" stroke="none"/></svg></button>
+      <button class="btn icon" id="back" title="Send to back ([)" disabled><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" fill="var(--panel)"/><rect x="2.5" y="2.5" width="8" height="8" fill="currentColor" opacity=".85" stroke="none"/></svg></button>
+    </div>
+
+    <div class="grow"></div>
+
+    <div class="grp">
+      <button class="btn icon" id="zoomOut" title="Zoom out (Ctrl+-)">&minus;</button>
+      <button class="btn" id="zoomLbl" title="Fit to window (Ctrl+0)" style="min-width:4.2em;justify-content:center">100%</button>
+      <button class="btn icon" id="zoomIn" title="Zoom in (Ctrl++)">+</button>
+    </div>
+
+    <div class="div"></div>
+    <button class="btn" id="help" title="Keyboard shortcuts (?)">?</button>
+    <button class="btn solid" id="copy">Copy ZPL</button>
   </div>
 
-  <aside>
-    <h2>Layers</h2>
-    <ul class="layers" id="layers"></ul>
+  <!-- ================= work area ================= -->
+  <div class="work">
 
-    <h2>Properties</h2>
-    <div id="props"><p class="empty">Nothing selected. Add an element, or click one on the label.</p></div>
+    <div class="rail left">
+      <div class="sec" style="flex:1;min-height:0;display:flex;flex-direction:column">
+        <h2>Layers <span class="grow"></span><span class="idx" id="count">0</span></h2>
+        <ul class="layers" id="layers" style="flex:1;overflow:auto"></ul>
+      </div>
+      <div class="sec">
+        <h2>Label</h2>
+        <div class="body">
+          <div class="row"><label for="dpmm">Density</label><div class="ctl">
+            <select id="dpmm">
+              <option value="6">6 dpmm &middot; 152 dpi</option>
+              <option value="8" selected>8 dpmm &middot; 203 dpi</option>
+              <option value="12">12 dpmm &middot; 300 dpi</option>
+              <option value="24">24 dpmm &middot; 600 dpi</option>
+            </select></div></div>
+          <div class="row"><label>Size (in)</label><div class="ctl pair">
+            <input type="number" id="lw" value="4" min=".5" max="16" step=".25" aria-label="Label width in inches">
+            <input type="number" id="lh" value="6" min=".5" max="16" step=".25" aria-label="Label height in inches">
+          </div></div>
+          <div class="row"><label for="snap">Snap</label><div class="ctl">
+            <select id="snap"><option value="1">Off</option><option value="5">5 dots</option>
+            <option value="10" selected>10 dots</option><option value="25">25 dots</option></select>
+          </div></div>
+        </div>
+      </div>
+    </div>
 
-    <details id="zplbox">
-      <summary>Generated ZPL</summary>
-      <textarea id="zpl" readonly spellcheck="false"></textarea>
-    </details>
-  </aside>
-</main>
+    <div class="stage" id="stage">
+      <div class="paper" id="paper"><img id="png" alt="Label preview"></div>
+    </div>
 
-<div class="status" id="status">Ready.</div>
+    <div class="rail right">
+      <div class="sec">
+        <h2>Properties</h2>
+        <div class="body" id="props"><p class="empty">Nothing selected.<br>Add an element, or click one on the label.</p></div>
+      </div>
+      <div class="sec">
+        <h2>ZPL <span class="grow"></span><button class="btn" id="dl" style="font-size:11px;padding:2px 7px">Download PNG</button></h2>
+        <div class="body"><textarea id="zpl" readonly spellcheck="false"></textarea></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= status ================= -->
+  <div class="status" id="status">
+    <span class="msg" id="msg">Ready.</span>
+    <span class="num" id="selInfo"></span>
+    <span class="num" id="cursor"></span>
+    <span class="num" id="dotsInfo"></span>
+  </div>
+</div>
 
 <script>
 (function () {
   'use strict';
 
-  // ---------------------------------------------------------------------
-  // The document is the source of truth for EDITING; the ZPL it generates is
-  // the source of truth for WHAT PRINTS. The canvas never draws anything
-  // itself - it shows the server's render with drag handles on top - so the
-  // editor cannot drift away from what the printer will do.
-  // ---------------------------------------------------------------------
-  var doc = { els: [] };
-  var seq = 1;
-  var sel = null;
-  var scale = 1;
-  var boxes = [];
+  /* ====================================================================
+     The canvas draws NOTHING. It shows the server's render and floats
+     drag handles over it, positioned from the field boxes the renderer
+     reports. There is therefore no second layout engine to drift away
+     from what the printer will actually do.
+     ==================================================================== */
 
   var $ = function (id) { return document.getElementById(id); };
-  var paper = $('paper'), png = $('png'), status = $('status');
-  var dpmm = $('dpmm'), lw = $('lw'), lh = $('lh'), snap = $('snap');
+  var els = [];                 // document, in ZPL draw order
+  var seq = 1;
+  var sel = [];                 // selected ids
+  var boxes = [];               // server-reported field boxes, aligned to drawn()
+  var zoom = 1, fitMode = true;
+  var history = [], hIndex = -1;
 
-  function setStatus(t, k) { status.textContent = t; status.className = 'status' + (k ? ' ' + k : ''); }
-  function esc(s) { return String(s).replace(/\^/g, ' ').replace(/[\r\n]/g, ' '); }
-  function dots() { var d = Math.round(+dpmm.value * 25.4); return { w: Math.round(+lw.value * d), h: Math.round(+lh.value * d) }; }
+  var stage = $('stage'), paper = $('paper'), png = $('png');
 
-  var DEFAULTS = {
+  /* ---------- helpers ---------- */
+  function dpi() { return Math.round(+$('dpmm').value * 25.4); }
+  function labelDots() { return { w: Math.round(+$('lw').value * dpi()), h: Math.round(+$('lh').value * dpi()) }; }
+  function snapTo() { return +$('snap').value || 1; }
+  function byId(id) { for (var i = 0; i < els.length; i++) { if (els[i].id === id) { return els[i]; } } return null; }
+  function drawn() { return els.filter(function (e) { return zplFor(e) !== ''; }); }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function say(t, kind) { $('msg').textContent = t; $('status').className = 'status' + (kind ? ' ' + kind : ''); }
+
+  // ZPL has no escape for the caret, so it cannot appear in field data.
+  function safe(s) { return String(s).replace(/[\^~]/g, ' ').replace(/[\r\n]+/g, ' '); }
+
+  /* ---------- model -> ZPL ---------- */
+  var MAKE = {
     text:    function () { return { type:'text', x:40, y:40, rot:'N', text:'Text', size:40 }; },
     barcode: function () { return { type:'barcode', x:40, y:40, rot:'N', sym:'code128', data:'ASSET-0001', height:90, module:3, line:true }; },
     qr:      function () { return { type:'qr', x:40, y:40, rot:'N', data:'https://fridge.run', ec:'M', mag:5 }; },
-    box:     function () { return { type:'box', x:40, y:40, w:300, h:120, thickness:4 }; },
-    image:   function () { return { type:'image', x:40, y:40, rot:'N', gf:'', label:'image' }; }
+    box:     function () { return { type:'box', x:40, y:40, w:300, h:120, thickness:4, filled:false }; },
+    image:   function () { return { type:'image', x:40, y:40, rot:'N', gf:'', name:'image' }; }
   };
 
-  // ---- document -> ZPL --------------------------------------------------
-  function elZpl(e) {
+  function zplFor(e) {
     var at = '^FO' + Math.round(e.x) + ',' + Math.round(e.y);
-    if (e.type === 'text')    { return at + '^A0' + e.rot + ',' + e.size + ',' + e.size + '^FD' + esc(e.text) + '^FS'; }
-    if (e.type === 'box')     { return at + '^GB' + Math.round(e.w) + ',' + Math.round(e.h) + ',' + e.thickness + '^FS'; }
-    if (e.type === 'qr')      { return at + '^BQ' + e.rot + ',2,' + e.mag + '^FD' + e.ec + 'A,' + esc(e.data) + '^FS'; }
-    if (e.type === 'image')   { return e.gf ? at + e.gf + '^FS' : ''; }
-    if (e.type === 'barcode') {
-      var by = '^BY' + e.module + ',3,' + e.height;
-      return e.sym === 'code39'
-        ? by + at + '^B3' + e.rot + ',N,' + e.height + ',' + (e.line ? 'Y' : 'N') + ',N^FD' + esc(e.data) + '^FS'
-        : by + at + '^BC' + e.rot + ',' + e.height + ',' + (e.line ? 'Y' : 'N') + ',N,N^FD' + esc(e.data) + '^FS';
+    switch (e.type) {
+      case 'text':
+        return at + '^A0' + e.rot + ',' + e.size + ',' + e.size + '^FD' + safe(e.text) + '^FS';
+      case 'box':
+        // A border thicker than the box is how ZPL expresses a solid fill.
+        var th = e.filled ? Math.max(e.w, e.h) : e.thickness;
+        return at + '^GB' + Math.round(e.w) + ',' + Math.round(e.h) + ',' + th + '^FS';
+      case 'qr':
+        return at + '^BQ' + e.rot + ',2,' + e.mag + '^FD' + e.ec + 'A,' + safe(e.data) + '^FS';
+      case 'image':
+        return e.gf ? at + e.gf + '^FS' : '';
+      case 'barcode':
+        var by = '^BY' + e.module + ',3,' + e.height;
+        return e.sym === 'code39'
+          ? by + at + '^B3' + e.rot + ',N,' + e.height + ',' + (e.line ? 'Y' : 'N') + ',N^FD' + safe(e.data) + '^FS'
+          : by + at + '^BC' + e.rot + ',' + e.height + ',' + (e.line ? 'Y' : 'N') + ',N,N^FD' + safe(e.data) + '^FS';
     }
     return '';
   }
 
   function toZpl() {
-    var d = dots();
+    var d = labelDots();
     var out = ['^XA', '^PW' + d.w, '^LL' + d.h];
-    doc.els.forEach(function (e) { var z = elZpl(e); if (z) { out.push(z); } });
+    els.forEach(function (e) { var z = zplFor(e); if (z) { out.push(z); } });
     out.push('^XZ');
     return out.join('\n');
   }
 
-  // ---- render -----------------------------------------------------------
+  /* ---------- history ----------
+     Snapshots, not diffs: a label is a few kilobytes of JSON, and a whole
+     snapshot cannot desynchronise the way a mis-applied inverse patch can. */
+  function pushHistory() {
+    history = history.slice(0, hIndex + 1);
+    history.push(clone(els));
+    if (history.length > 80) { history.shift(); }
+    hIndex = history.length - 1;
+    refreshHistoryButtons();
+  }
+  function refreshHistoryButtons() {
+    $('undo').disabled = hIndex <= 0;
+    $('redo').disabled = hIndex >= history.length - 1;
+  }
+  function restore(i) {
+    hIndex = i;
+    els = clone(history[i]);
+    sel = sel.filter(byId);
+    refreshHistoryButtons();
+    paint(); render();
+  }
+  $('undo').addEventListener('click', function () { if (hIndex > 0) { restore(hIndex - 1); say('Undo.'); } });
+  $('redo').addEventListener('click', function () { if (hIndex < history.length - 1) { restore(hIndex + 1); say('Redo.'); } });
+
+  /* ---------- render ---------- */
   var inflight = null, timer = null, lastUrl = null;
 
   function render() {
     var zpl = toZpl();
     $('zpl').value = zpl;
+    var d = labelDots();
+    $('dotsInfo').textContent = d.w + ' × ' + d.h + ' dots';
 
     if (inflight) { inflight.abort(); }
     var ac = new AbortController(); inflight = ac;
 
-    fetch('/api/zpl/render?dpmm=' + dpmm.value + '&w=' + lw.value + '&h=' + lh.value, {
-      method:'POST', headers:{'Content-Type':'text/plain'}, body:zpl, signal:ac.signal
+    fetch('/api/zpl/render?dpmm=' + $('dpmm').value + '&w=' + $('lw').value + '&h=' + $('lh').value, {
+      method:'POST', headers:{ 'Content-Type':'text/plain' }, body:zpl, signal:ac.signal
     }).then(function (r) {
       if (!r.ok) { return r.json().then(function (j) { throw new Error(j.error || ('HTTP ' + r.status)); }); }
-      var f = r.headers.get('X-Zpl-Fields');
-      var warn = r.headers.get('X-Zpl-Warnings');
-      return r.blob().then(function (b) { return { blob:b, fields:f ? JSON.parse(f) : [], warn:warn }; });
+      var f = r.headers.get('X-Zpl-Fields'), w = r.headers.get('X-Zpl-Warnings');
+      return r.blob().then(function (b) { return { blob:b, fields:f ? JSON.parse(f) : [], warn:w }; });
     }).then(function (res) {
       if (lastUrl) { URL.revokeObjectURL(lastUrl); }
       lastUrl = URL.createObjectURL(res.blob);
-      png.onload = function () { layout(res.fields); };
+      png.onload = function () { boxes = res.fields; applyZoom(); paint(); };
       png.src = lastUrl;
-      setStatus(res.warn ? ('Rendered. Not previewable: ' + res.warn) : 'Rendered.', res.warn ? 'warn' : null);
-    }).catch(function (e) {
-      if (e.name !== 'AbortError') { setStatus(e.message, 'err'); }
-    });
+      if (res.warn) { say('Not previewable: ' + res.warn, 'warn'); }
+      else { say('Ready.'); }
+    }).catch(function (e) { if (e.name !== 'AbortError') { say(e.message, 'err'); } });
   }
+  function schedule() { clearTimeout(timer); timer = setTimeout(render, 140); }
 
-  function schedule() { clearTimeout(timer); timer = setTimeout(render, 160); }
+  /* ---------- zoom ---------- */
+  function applyZoom() {
+    var d = labelDots();
+    if (fitMode) {
+      var availW = stage.clientWidth - 60, availH = stage.clientHeight - 60;
+      zoom = Math.max(0.05, Math.min(availW / d.w, availH / d.h));
+    }
+    paper.style.width = Math.round(d.w * zoom) + 'px';
+    $('zoomLbl').textContent = Math.round(zoom * 100) + '%';
+  }
+  function setZoom(z, keepFit) {
+    fitMode = !!keepFit;
+    zoom = Math.max(0.05, Math.min(8, z));
+    applyZoom(); paint();
+  }
+  $('zoomIn').addEventListener('click', function () { setZoom(zoom * 1.25, false); });
+  $('zoomOut').addEventListener('click', function () { setZoom(zoom / 1.25, false); });
+  $('zoomLbl').addEventListener('click', function () { setZoom(1, true); });
+  window.addEventListener('resize', function () { applyZoom(); paint(); });
 
-  // ---- hit boxes over the real render -----------------------------------
-  //
-  // The server reports where it drew each field, in order. Elements that emit
-  // no ZPL (an image with no data yet) are skipped on both sides, so the two
-  // lists stay aligned.
-  function layout(fields) {
-    boxes = fields || [];
-    var d = dots();
-    scale = png.clientWidth / d.w;
-
+  /* ---------- painting handles ---------- */
+  function paint() {
     Array.prototype.slice.call(paper.querySelectorAll('.hit')).forEach(function (n) { n.remove(); });
-
-    var drawn = doc.els.filter(function (e) { return elZpl(e) !== ''; });
-    drawn.forEach(function (e, i) {
+    var list = drawn();
+    list.forEach(function (e, i) {
       var b = boxes[i];
       if (!b) { return; }
       var div = document.createElement('div');
-      div.className = 'hit' + (sel === e.id ? ' sel' : '');
-      div.style.left = (b[0] * scale) + 'px';
-      div.style.top = (b[1] * scale) + 'px';
-      div.style.width = Math.max(8, b[2] * scale) + 'px';
-      div.style.height = Math.max(8, b[3] * scale) + 'px';
+      div.className = 'hit' + (sel.indexOf(e.id) >= 0 ? ' sel' : '') + (e.type === 'box' ? ' resizable' : '');
+      div.style.left = (b[0] * zoom) + 'px';
+      div.style.top = (b[1] * zoom) + 'px';
+      div.style.width = Math.max(6, b[2] * zoom) + 'px';
+      div.style.height = Math.max(6, b[3] * zoom) + 'px';
       div.dataset.id = e.id;
-      div.title = e.type;
+      if (e.type === 'box') {
+        var g = document.createElement('div'); g.className = 'grip se'; div.appendChild(g);
+      }
       paper.appendChild(div);
-    });
-  }
-
-  // ---- selection & panels ------------------------------------------------
-  function find(id) { return doc.els.filter(function (e) { return e.id === id; })[0]; }
-
-  function select(id) {
-    sel = id;
-    $('del').disabled = $('dup').disabled = !id;
-    Array.prototype.slice.call(paper.querySelectorAll('.hit')).forEach(function (n) {
-      n.classList.toggle('sel', +n.dataset.id === id);
     });
     drawLayers();
     drawProps();
+    var n = sel.length;
+    $('selInfo').textContent = n ? (n + ' selected') : '';
+    ['front','back'].forEach(function (id) { $(id).disabled = n !== 1; });
+    Array.prototype.slice.call(document.querySelectorAll('.align')).forEach(function (b) { b.disabled = n < 2; });
+    $('count').textContent = els.length;
   }
 
+  /* ---------- layers ---------- */
+  var ICONS = {
+    text:'<path d="M3 4V3h10v1M8 3v10M6 13h4"/>',
+    barcode:'<path d="M3 3v10M5.5 3v10M7.5 3v10M10 3v10M12.5 3v10"/>',
+    qr:'<rect x="2.5" y="2.5" width="4" height="4"/><rect x="9.5" y="9.5" width="4" height="4"/><rect x="9.5" y="2.5" width="4" height="4"/>',
+    box:'<rect x="2.5" y="3.5" width="11" height="9"/>',
+    image:'<rect x="2.5" y="3.5" width="11" height="9"/><path d="M3 11l3-2.6 2.4 2"/>'
+  };
   function drawLayers() {
-    var ul = $('layers');
-    ul.innerHTML = '';
-    if (!doc.els.length) { ul.innerHTML = '<li class="empty">No elements yet.</li>'; return; }
-    doc.els.forEach(function (e) {
+    var ul = $('layers'); ul.innerHTML = '';
+    if (!els.length) { ul.innerHTML = '<li class="empty" style="cursor:default">No elements yet</li>'; return; }
+    // Topmost first: later in the ZPL means drawn over everything before it.
+    els.slice().reverse().forEach(function (e) {
       var li = document.createElement('li');
-      li.className = (sel === e.id ? 'sel' : '');
-      var tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = e.type;
-      var nm = document.createElement('span'); nm.className = 'nm';
-      nm.textContent = e.type === 'box' ? (e.w + '×' + e.h) : (e.text || e.data || e.label || '');
-      li.appendChild(tag); li.appendChild(nm);
-      li.addEventListener('click', function () { select(e.id); });
+      li.className = sel.indexOf(e.id) >= 0 ? 'sel' : '';
+      li.innerHTML = '<span class="ico"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" '
+        + 'stroke="currentColor" stroke-width="1.4">' + (ICONS[e.type] || '') + '</svg></span>'
+        + '<span class="nm"></span><span class="idx"></span>';
+      li.querySelector('.nm').textContent =
+        e.type === 'box' ? (Math.round(e.w) + '×' + Math.round(e.h))
+        : (e.text || e.data || e.name || e.type);
+      li.querySelector('.idx').textContent = e.rot && e.rot !== 'N' ? e.rot : '';
+      li.addEventListener('click', function (ev) {
+        if (ev.shiftKey) { toggle(e.id); } else { select([e.id]); }
+      });
       ul.appendChild(li);
     });
   }
 
-  var FIELDS = {
-    text:    [['text','Text','text'], ['size','Size','number'], ['rot','Rotate','rot']],
-    barcode: [['data','Data','text'], ['sym','Symbology','sym'], ['height','Height','number'],
-              ['module','Module','number'], ['line','Caption','bool'], ['rot','Rotate','rot']],
-    qr:      [['data','Data','text'], ['ec','Correction','ec'], ['mag','Size','number'], ['rot','Rotate','rot']],
-    box:     [['w','Width','number'], ['h','Height','number'], ['thickness','Border','number']],
-    image:   [['rot','Rotate','rot']]
+  /* ---------- selection ---------- */
+  function select(ids) { sel = ids.slice(); paint(); }
+  function toggle(id) {
+    var i = sel.indexOf(id);
+    if (i >= 0) { sel.splice(i, 1); } else { sel.push(id); }
+    paint();
+  }
+
+  /* ---------- inspector ---------- */
+  var SCHEMA = {
+    text:    [['text','Text','text'],['size','Size','num'],['rot','Rotate','rot']],
+    barcode: [['data','Data','text'],['sym','Type','sym'],['height','Height','num'],
+              ['module','Module','num'],['line','Caption','bool'],['rot','Rotate','rot']],
+    qr:      [['data','Data','text'],['ec','Recovery','ec'],['mag','Module','num'],['rot','Rotate','rot']],
+    box:     [['w','Width','num'],['h','Height','num'],['thickness','Border','num'],['filled','Filled','bool']],
+    image:   [['name','File','ro'],['rot','Rotate','rot']]
+  };
+  var OPTS = {
+    rot:[['N','0°'],['R','90°'],['I','180°'],['B','270°']],
+    sym:[['code128','Code 128'],['code39','Code 39']],
+    ec: [['L','L · 7%'],['M','M · 15%'],['Q','Q · 25%'],['H','H · 30%']]
   };
 
   function drawProps() {
     var host = $('props');
-    var e = find(sel);
-    if (!e) { host.innerHTML = '<p class="empty">Nothing selected. Add an element, or click one on the label.</p>'; return; }
+    if (sel.length === 0) {
+      host.innerHTML = '<p class="empty">Nothing selected.<br>Add an element, or click one on the label.</p>';
+      return;
+    }
+    if (sel.length > 1) {
+      host.innerHTML = '<p class="hint">' + sel.length + ' elements selected. '
+        + 'Use the align tools, drag to move them together, or <kbd>Esc</kbd> to deselect.</p>';
+      return;
+    }
 
+    var e = byId(sel[0]);
+    if (!e) { host.innerHTML = ''; return; }
     host.innerHTML = '';
-    [['x','X','number'], ['y','Y','number']].concat(FIELDS[e.type] || []).forEach(function (f) {
+
+    // Position first: it is what people reach for most.
+    var pos = document.createElement('div');
+    pos.className = 'row';
+    pos.innerHTML = '<label>Position</label><div class="ctl pair"></div>';
+    ['x','y'].forEach(function (k) {
+      var inp = document.createElement('input');
+      inp.type = 'number'; inp.value = Math.round(e[k]); inp.setAttribute('aria-label', k);
+      inp.addEventListener('change', function () { e[k] = +inp.value || 0; pushHistory(); paint(); render(); });
+      inp.addEventListener('input', function () { e[k] = +inp.value || 0; schedule(); });
+      pos.querySelector('.ctl').appendChild(inp);
+    });
+    host.appendChild(pos);
+
+    (SCHEMA[e.type] || []).forEach(function (f) {
       var key = f[0], name = f[1], kind = f[2];
       var row = document.createElement('div'); row.className = 'row';
-      var lab = document.createElement('label'); lab.textContent = name; row.appendChild(lab);
+      var lab = document.createElement('label'); lab.textContent = name;
+      var ctl = document.createElement('div'); ctl.className = 'ctl';
+      row.appendChild(lab); row.appendChild(ctl);
 
-      var input;
-      if (kind === 'rot' || kind === 'sym' || kind === 'ec') {
-        input = document.createElement('select');
-        var opts = kind === 'rot' ? [['N','0°'],['R','90°'],['I','180°'],['B','270°']]
-                 : kind === 'sym' ? [['code128','Code 128'],['code39','Code 39']]
-                 : [['L','L'],['M','M'],['Q','Q'],['H','H']];
-        opts.forEach(function (o) {
+      if (kind === 'rot') {
+        var seg = document.createElement('div'); seg.className = 'seg';
+        OPTS.rot.forEach(function (o) {
+          var b = document.createElement('button');
+          b.type = 'button'; b.textContent = o[1];
+          b.setAttribute('aria-pressed', e.rot === o[0] ? 'true' : 'false');
+          b.addEventListener('click', function () { e.rot = o[0]; pushHistory(); paint(); render(); });
+          seg.appendChild(b);
+        });
+        ctl.appendChild(seg);
+      } else if (kind === 'sym' || kind === 'ec') {
+        var s = document.createElement('select');
+        OPTS[kind].forEach(function (o) {
           var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1];
           if (e[key] === o[0]) { op.selected = true; }
-          input.appendChild(op);
+          s.appendChild(op);
         });
+        s.addEventListener('change', function () { e[key] = s.value; pushHistory(); paint(); render(); });
+        ctl.appendChild(s);
       } else if (kind === 'bool') {
-        input = document.createElement('input'); input.type = 'checkbox'; input.checked = !!e[key];
-        input.style.flex = 'none';
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!e[key];
+        cb.addEventListener('change', function () { e[key] = cb.checked; pushHistory(); paint(); render(); });
+        ctl.appendChild(cb);
+      } else if (kind === 'ro') {
+        var sp = document.createElement('span'); sp.className = 'hint'; sp.style.margin = '0';
+        sp.textContent = e[key] || '—';
+        ctl.appendChild(sp);
       } else {
-        input = document.createElement('input'); input.type = kind; input.value = e[key];
+        var inp2 = document.createElement('input');
+        inp2.type = kind === 'num' ? 'number' : 'text';
+        inp2.value = e[key];
+        inp2.addEventListener('input', function () {
+          e[key] = kind === 'num' ? (+inp2.value || 0) : inp2.value;
+          drawLayers(); schedule();
+        });
+        inp2.addEventListener('change', pushHistory);
+        ctl.appendChild(inp2);
       }
-
-      input.addEventListener('input', function () {
-        e[key] = kind === 'bool' ? input.checked : (kind === 'number' ? (+input.value || 0) : input.value);
-        drawLayers(); schedule();
-      });
-      row.appendChild(input);
       host.appendChild(row);
     });
+
+    if (e.type === 'qr') {
+      var h = document.createElement('p'); h.className = 'hint';
+      h.textContent = 'Higher recovery survives more damage but makes the code larger.';
+      host.appendChild(h);
+    }
+    if (e.type === 'box' && e.filled) {
+      var h2 = document.createElement('p'); h2.className = 'hint';
+      h2.textContent = 'Filled uses a border thicker than the box, which is how ZPL expresses a solid rectangle.';
+      host.appendChild(h2);
+    }
   }
 
-  // ---- add / remove ------------------------------------------------------
+  /* ---------- add / remove / order ---------- */
   function add(type, extra) {
-    var e = DEFAULTS[type]();
+    var e = MAKE[type]();
     if (extra) { Object.keys(extra).forEach(function (k) { e[k] = extra[k]; }); }
     e.id = seq++;
-    doc.els.push(e);
-    select(e.id);
-    schedule();
+    els.push(e);
+    sel = [e.id];
+    pushHistory(); paint(); render();
     return e;
   }
-
   Array.prototype.slice.call(document.querySelectorAll('[data-add]')).forEach(function (b) {
     b.addEventListener('click', function () { add(b.dataset.add); });
   });
+  $('addImg').addEventListener('click', function () { $('img').click(); });
 
-  $('del').addEventListener('click', function () {
-    doc.els = doc.els.filter(function (e) { return e.id !== sel; });
-    select(null); schedule();
+  function removeSelected() {
+    if (!sel.length) { return; }
+    els = els.filter(function (e) { return sel.indexOf(e.id) < 0; });
+    sel = [];
+    pushHistory(); paint(); render();
+  }
+
+  function reorder(toFront) {
+    if (sel.length !== 1) { return; }
+    var e = byId(sel[0]);
+    els = els.filter(function (x) { return x !== e; });
+    if (toFront) { els.push(e); } else { els.unshift(e); }
+    pushHistory(); paint(); render();
+  }
+  $('front').addEventListener('click', function () { reorder(true); });
+  $('back').addEventListener('click', function () { reorder(false); });
+
+  /* ---------- align ----------
+     Uses the SERVER's boxes, so aligning text lines up the actual glyphs
+     rather than a guessed bounding box. */
+  function boxOf(e) {
+    var i = drawn().indexOf(e);
+    var b = i >= 0 ? boxes[i] : null;
+    return b ? { x:b[0], y:b[1], w:b[2], h:b[3] } : { x:e.x, y:e.y, w:0, h:0 };
+  }
+  Array.prototype.slice.call(document.querySelectorAll('.align')).forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var chosen = sel.map(byId).filter(Boolean);
+      if (chosen.length < 2) { return; }
+      var bs = chosen.map(boxOf);
+      var minX = Math.min.apply(null, bs.map(function (b) { return b.x; }));
+      var maxR = Math.max.apply(null, bs.map(function (b) { return b.x + b.w; }));
+      var minY = Math.min.apply(null, bs.map(function (b) { return b.y; }));
+      var maxB = Math.max.apply(null, bs.map(function (b) { return b.y + b.h; }));
+      var cx = (minX + maxR) / 2, cy = (minY + maxB) / 2;
+
+      chosen.forEach(function (e, i) {
+        var b = bs[i];
+        switch (btn.dataset.align) {
+          case 'left':    e.x += minX - b.x; break;
+          case 'right':   e.x += maxR - (b.x + b.w); break;
+          case 'hcenter': e.x += cx - (b.x + b.w / 2); break;
+          case 'top':     e.y += minY - b.y; break;
+          case 'bottom':  e.y += maxB - (b.y + b.h); break;
+          case 'vcenter': e.y += cy - (b.y + b.h / 2); break;
+        }
+        e.x = Math.max(0, Math.round(e.x));
+        e.y = Math.max(0, Math.round(e.y));
+      });
+      pushHistory(); paint(); render();
+      say('Aligned ' + chosen.length + ' elements.');
+    });
   });
 
-  $('dup').addEventListener('click', function () {
-    var e = find(sel);
-    if (!e) { return; }
-    var c = JSON.parse(JSON.stringify(e));
-    c.id = seq++; c.x += 20; c.y += 20;
-    doc.els.push(c); select(c.id); schedule();
-  });
-
-  $('copy').addEventListener('click', function () {
-    var t = toZpl();
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(t).then(function () { setStatus('ZPL copied.'); },
-        function () { window.prompt('Copy the ZPL:', t); });
-    } else { window.prompt('Copy the ZPL:', t); }
-  });
-
-  // ---- dragging ----------------------------------------------------------
-  var drag = null;
+  /* ---------- dragging & marquee ---------- */
+  var drag = null, marquee = null;
 
   paper.addEventListener('pointerdown', function (ev) {
     var hit = ev.target.closest('.hit');
-    if (!hit) { select(null); return; }
-    var e = find(+hit.dataset.id);
+    if (!hit) {
+      // Empty space: start a marquee selection.
+      var pr = paper.getBoundingClientRect();
+      marquee = { x0:ev.clientX - pr.left, y0:ev.clientY - pr.top, node:null, additive:ev.shiftKey };
+      if (!ev.shiftKey) { select([]); }
+      paper.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+      return;
+    }
+
+    var e = byId(+hit.dataset.id);
     if (!e) { return; }
-    select(e.id);
+    if (ev.shiftKey) { toggle(e.id); return; }
+    if (sel.indexOf(e.id) < 0) { select([e.id]); }
 
-    // The bottom-right corner resizes a box; everything else moves.
-    var r = hit.getBoundingClientRect();
-    var corner = e.type === 'box' && (ev.clientX > r.right - 12) && (ev.clientY > r.bottom - 12);
-
-    drag = { e:e, mode:corner ? 'size' : 'move', sx:ev.clientX, sy:ev.clientY,
-             ox:e.x, oy:e.y, ow:e.w, oh:e.h, node:hit };
-    hit.setPointerCapture(ev.pointerId);
+    var onGrip = ev.target.classList.contains('grip');
+    drag = {
+      mode: onGrip ? 'size' : 'move',
+      sx: ev.clientX, sy: ev.clientY,
+      items: sel.map(byId).filter(Boolean).map(function (o) {
+        return { e:o, x:o.x, y:o.y, w:o.w, h:o.h };
+      }),
+      node: hit
+    };
+    paper.setPointerCapture(ev.pointerId);
     ev.preventDefault();
   });
 
   paper.addEventListener('pointermove', function (ev) {
-    if (!drag) { return; }
-    var dx = (ev.clientX - drag.sx) / scale;
-    var dy = (ev.clientY - drag.sy) / scale;
-    var q = snap.checked ? 10 : 1;
-    var round = function (v) { return Math.round(v / q) * q; };
+    var pr = paper.getBoundingClientRect();
+    $('cursor').textContent = Math.round((ev.clientX - pr.left) / zoom) + ', '
+      + Math.round((ev.clientY - pr.top) / zoom);
 
-    if (drag.mode === 'size') {
-      drag.e.w = Math.max(4, round(drag.ow + dx));
-      drag.e.h = Math.max(4, round(drag.oh + dy));
-      drag.node.style.width = (drag.e.w * scale) + 'px';
-      drag.node.style.height = (drag.e.h * scale) + 'px';
+    if (marquee) {
+      if (!marquee.node) {
+        marquee.node = document.createElement('div');
+        marquee.node.className = 'marquee';
+        paper.appendChild(marquee.node);
+      }
+      var x = ev.clientX - pr.left, y = ev.clientY - pr.top;
+      marquee.node.style.left = Math.min(x, marquee.x0) + 'px';
+      marquee.node.style.top = Math.min(y, marquee.y0) + 'px';
+      marquee.node.style.width = Math.abs(x - marquee.x0) + 'px';
+      marquee.node.style.height = Math.abs(y - marquee.y0) + 'px';
+      return;
+    }
+
+    if (!drag) { return; }
+    var q = snapTo();
+    var dx = (ev.clientX - drag.sx) / zoom, dy = (ev.clientY - drag.sy) / zoom;
+    var rnd = function (v) { return Math.round(v / q) * q; };
+
+    drag.items.forEach(function (it) {
+      if (drag.mode === 'size') {
+        it.e.w = Math.max(4, rnd(it.w + dx));
+        it.e.h = Math.max(4, rnd(it.h + dy));
+      } else {
+        it.e.x = Math.max(0, rnd(it.x + dx));
+        it.e.y = Math.max(0, rnd(it.y + dy));
+      }
+    });
+
+    // Move the handles live and defer the authoritative render to release:
+    // a round trip per pixel would make dragging feel like wading.
+    if (drag.mode === 'move') {
+      var list = drawn();
+      drag.items.forEach(function (it) {
+        var n = paper.querySelector('.hit[data-id="' + it.e.id + '"]');
+        var b = boxes[list.indexOf(it.e)];
+        if (!n || !b) { return; }
+        // Offset the handle by how far the element has moved from where the
+        // server last reported it. The box itself is only refreshed on release.
+        n.style.left = ((b[0] + (it.e.x - it.x)) * zoom) + 'px';
+        n.style.top = ((b[1] + (it.e.y - it.y)) * zoom) + 'px';
+      });
     } else {
-      drag.e.x = Math.max(0, round(drag.ox + dx));
-      drag.e.y = Math.max(0, round(drag.oy + dy));
-      // Move the handle live; the authoritative render follows on release, so
-      // dragging stays smooth instead of waiting on a round trip per pixel.
-      drag.node.style.left = (drag.e.x * scale) + 'px';
-      drag.node.style.top = (drag.e.y * scale) + 'px';
+      drag.node.style.width = (drag.items[0].e.w * zoom) + 'px';
+      drag.node.style.height = (drag.items[0].e.h * zoom) + 'px';
     }
     ev.preventDefault();
   });
 
-  ['pointerup', 'pointercancel'].forEach(function (t) {
+  ['pointerup','pointercancel'].forEach(function (t) {
     paper.addEventListener(t, function () {
-      if (!drag) { return; }
-      drag = null;
-      drawProps(); drawLayers(); render();
+      if (marquee) {
+        if (marquee.node) {
+          var m = marquee.node.getBoundingClientRect(), pr = paper.getBoundingClientRect();
+          var picked = marquee.additive ? sel.slice() : [];
+          var list = drawn();
+          list.forEach(function (e, i) {
+            var b = boxes[i]; if (!b) { return; }
+            var l = pr.left + b[0] * zoom, tp = pr.top + b[1] * zoom;
+            var r = l + b[2] * zoom, bt = tp + b[3] * zoom;
+            if (r > m.left && l < m.right && bt > m.top && tp < m.bottom && picked.indexOf(e.id) < 0) {
+              picked.push(e.id);
+            }
+          });
+          marquee.node.remove();
+          select(picked);
+          if (picked.length) { say(picked.length + ' selected.'); }
+        }
+        marquee = null;
+        return;
+      }
+      if (drag) { drag = null; pushHistory(); render(); }
     });
   });
 
-  // ---- keyboard ----------------------------------------------------------
+  /* ---------- keyboard ---------- */
   document.addEventListener('keydown', function (ev) {
-    if (/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) { return; }
-    var e = find(sel);
-    if (!e) { return; }
+    var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
+    var mod = ev.ctrlKey || ev.metaKey;
+
+    if (mod && ev.key.toLowerCase() === 'z') {
+      ev.preventDefault();
+      (ev.shiftKey ? $('redo') : $('undo')).click();
+      return;
+    }
+    if (mod && ev.key === '0') { ev.preventDefault(); setZoom(1, true); return; }
+    if (mod && (ev.key === '=' || ev.key === '+')) { ev.preventDefault(); setZoom(zoom * 1.25, false); return; }
+    if (mod && ev.key === '-') { ev.preventDefault(); setZoom(zoom / 1.25, false); return; }
+    if (mod && ev.key.toLowerCase() === 'a' && !typing) {
+      ev.preventDefault(); select(els.map(function (e) { return e.id; })); return;
+    }
+    if (mod && ev.key.toLowerCase() === 'd' && sel.length === 1) {
+      ev.preventDefault();
+      var c = clone(byId(sel[0])); c.id = seq++; c.x += 20; c.y += 20;
+      els.push(c); sel = [c.id]; pushHistory(); paint(); render();
+      return;
+    }
+    if (typing) { return; }
+
+    if (ev.key === 'Escape') { select([]); return; }
+    if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); removeSelected(); return; }
+    if (ev.key === ']') { reorder(true); return; }
+    if (ev.key === '[') { reorder(false); return; }
+    if (ev.key === '?') { $('help').click(); return; }
+    if (!mod && 'tbqri'.indexOf(ev.key.toLowerCase()) >= 0 && !sel.length) {
+      var map = { t:'text', b:'barcode', q:'qr', r:'box', i:'image' };
+      var which = map[ev.key.toLowerCase()];
+      if (which === 'image') { $('img').click(); } else { add(which); }
+      return;
+    }
+
     var step = ev.shiftKey ? 10 : 1;
-    var moved = true;
-    if (ev.key === 'ArrowLeft')       { e.x = Math.max(0, e.x - step); }
-    else if (ev.key === 'ArrowRight') { e.x += step; }
-    else if (ev.key === 'ArrowUp')    { e.y = Math.max(0, e.y - step); }
-    else if (ev.key === 'ArrowDown')  { e.y += step; }
-    else if (ev.key === 'Delete' || ev.key === 'Backspace') { $('del').click(); return; }
-    else { moved = false; }
+    var moved = false;
+    sel.map(byId).filter(Boolean).forEach(function (e) {
+      if (ev.key === 'ArrowLeft')       { e.x = Math.max(0, e.x - step); moved = true; }
+      else if (ev.key === 'ArrowRight') { e.x += step; moved = true; }
+      else if (ev.key === 'ArrowUp')    { e.y = Math.max(0, e.y - step); moved = true; }
+      else if (ev.key === 'ArrowDown')  { e.y += step; moved = true; }
+    });
     if (moved) { ev.preventDefault(); drawProps(); schedule(); }
   });
+  document.addEventListener('keyup', function (ev) {
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].indexOf(ev.key) >= 0 && sel.length) { pushHistory(); }
+  });
 
-  // ---- image import ------------------------------------------------------
+  /* ---------- image import ---------- */
   $('img').addEventListener('change', function () {
     var f = this.files && this.files[0];
     this.value = '';
     if (!f) { return; }
-    setStatus('Converting ' + f.name + '…');
+    say('Converting ' + f.name + '…');
     fetch('/api/zpl/image?w=300&dither=1', {
-      method:'POST', headers:{'Content-Type':'application/octet-stream'}, body:f
-    }).then(function (r) {
-      return r.json().then(function (j) { if (!r.ok) { throw new Error(j.error); } return j; });
-    }).then(function (j) {
-      add('image', { gf:j.zpl, label:f.name });
-      setStatus('Added ' + j.width + '×' + j.height + ' image.');
-    }).catch(function (e) { setStatus(e.message, 'err'); });
+      method:'POST', headers:{ 'Content-Type':'application/octet-stream' }, body:f
+    }).then(function (r) { return r.json().then(function (j) { if (!r.ok) { throw new Error(j.error); } return j; }); })
+      .then(function (j) {
+        add('image', { gf:j.zpl, name:f.name });
+        say('Added ' + j.width + '×' + j.height + ' image (dithered).');
+      })
+      .catch(function (e) { say(e.message, 'err'); });
   });
 
-  [dpmm, lw, lh].forEach(function (n) { n.addEventListener('change', render); });
-  window.addEventListener('resize', function () { layout(boxes); });
+  /* ---------- misc actions ---------- */
+  $('copy').addEventListener('click', function () {
+    var t = toZpl();
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(t).then(function () { say('ZPL copied to clipboard.'); },
+        function () { window.prompt('Copy the ZPL:', t); });
+    } else { window.prompt('Copy the ZPL:', t); }
+  });
+  $('dl').addEventListener('click', function () {
+    if (!lastUrl) { return; }
+    var a = document.createElement('a'); a.href = lastUrl; a.download = 'label.png'; a.click();
+  });
+  $('help').addEventListener('click', function () {
+    window.alert(
+      'Keyboard\n\n'
+      + 'T / B / Q / R / I   add text, barcode, QR, box, image\n'
+      + 'Arrows              nudge 1 dot   (Shift: 10)\n'
+      + 'Ctrl+Z / Ctrl+Shift+Z   undo / redo\n'
+      + 'Ctrl+D              duplicate\n'
+      + 'Ctrl+A              select all\n'
+      + '[ / ]               send to back / bring to front\n'
+      + 'Delete              remove\n'
+      + 'Esc                 deselect\n'
+      + 'Ctrl +/- / Ctrl+0   zoom in, out, fit\n\n'
+      + 'Shift-click or drag on empty space to select several.'
+    );
+  });
 
-  // ---- a starting label so the canvas is never empty ---------------------
-  add('text', { x:40, y:36, text:'INVENTORY', size:48 });
-  add('text', { x:40, y:100, text:'Shelf B / Bin 14', size:28 });
-  add('barcode', { x:40, y:170, data:'ASSET-0001', height:100 });
-  add('qr', { x:560, y:170, data:'https://fridge.run/?f=YnG', mag:5 });
-  select(null);
+  ['dpmm','lw','lh'].forEach(function (id) {
+    $(id).addEventListener('change', function () { fitMode = true; render(); });
+  });
+
+  /* ---------- a starting label ---------- */
+  add('text',    { x:40, y:36,  text:'INVENTORY', size:48 });
+  add('text',    { x:40, y:104, text:'Shelf B / Bin 14', size:28 });
+  add('barcode', { x:40, y:180, data:'ASSET-0001', height:100 });
+  add('qr',      { x:560, y:180, data:'https://fridge.run/?f=YnG', mag:5 });
+  sel = [];
+  history = []; hIndex = -1; pushHistory();
   render();
 })();
 </script>
