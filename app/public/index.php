@@ -71,6 +71,35 @@ if ($method === 'OPTIONS') {
     exit;
 }
 
+// ZPL preview and editor.
+//
+// Handled BEFORE the database-backed API block on purpose: rendering a label is
+// a pure function from ZPL text to a PNG, so it must not require Postgres, a
+// printer registry, or any configuration. The preview stays useful when the
+// rest of the stack is down, which is exactly when you want to check a label
+// without printing one.
+if (str_starts_with($path, '/api/zpl/')) {
+    require_once __DIR__ . '/../src/Zpl/Canvas.php';
+    require_once __DIR__ . '/../src/Zpl/Command.php';
+    require_once __DIR__ . '/../src/Zpl/Lexer.php';
+    require_once __DIR__ . '/../src/Zpl/Barcode/Code128.php';
+    require_once __DIR__ . '/../src/Zpl/Barcode/Code39.php';
+    require_once __DIR__ . '/../src/Zpl/Renderer.php';
+    require_once __DIR__ . '/../src/Zpl/PreviewController.php';
+
+    (new PrinterHub\Zpl\PreviewController())->handle($method, $path, $query);
+    exit;
+}
+
+if ($path === '/zpl' || $path === '/zpl/') {
+    $page = __DIR__ . '/zpl/index.html';
+    if (is_file($page)) {
+        header('Content-Type: text/html; charset=utf-8');
+        readfile($page);
+        exit;
+    }
+}
+
 if (str_starts_with($path, '/api/')) {
     $commands = new CommandRunner();
     $database = new Database();

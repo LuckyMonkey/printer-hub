@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZPL Studio — Printer Hub</title>
+<style>
+  :root {
+    --bg: #f6f6f4;
+    --panel: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --line: #dcdcd6;
+    --accent: #1f5fd0;
+    --bad: #b3261e;
+    --warn: #8a6100;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141414; --panel: #1c1c1c; --ink: #ededed; --muted: #9a9a9a;
+      --line: #2e2e2e; --accent: #7aa7f0; --bad: #f2837a; --warn: #e0b562;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141414; --panel: #1c1c1c; --ink: #ededed; --muted: #9a9a9a;
+    --line: #2e2e2e; --accent: #7aa7f0; --bad: #f2837a; --warn: #e0b562;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  h1 { margin: 0; font-size: 16px; letter-spacing: .02em; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  header .spacer { flex: 1; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+  label.ctl { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  select, input[type=number] {
+    background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 7px; padding: 5px 8px; font: inherit; width: 5.5em;
+  }
+  select { width: auto; }
+  main { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 0; height: calc(100vh - 59px); }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } }
+  .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .pane + .pane { border-left: 1px solid var(--line); }
+  @media (max-width: 900px) { .pane + .pane { border-left: 0; border-top: 1px solid var(--line); } }
+  .pane h2 {
+    margin: 0; padding: 9px 14px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--muted); border-bottom: 1px solid var(--line);
+    background: var(--panel); display: flex; align-items: center; gap: 10px;
+  }
+  .pane h2 .spacer { flex: 1; }
+  textarea {
+    flex: 1; min-height: 340px; border: 0; padding: 14px; resize: none;
+    background: var(--panel); color: var(--ink);
+    font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 2;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .preview {
+    flex: 1; overflow: auto; padding: 18px; display: grid; place-items: start center;
+    background: repeating-conic-gradient(var(--line) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+  }
+  .preview img {
+    max-width: 100%; height: auto; background: #fff;
+    box-shadow: 0 2px 14px rgba(0,0,0,.28); image-rendering: pixelated;
+  }
+  .status { padding: 8px 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); background: var(--panel); }
+  .status.err { color: var(--bad); }
+  .status.warn { color: var(--warn); }
+  button {
+    background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 7px; padding: 5px 11px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  .samples { display: flex; gap: 6px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ZPL Studio</h1>
+  <span class="sub">Renders on this machine. Nothing is uploaded anywhere.</span>
+  <span class="spacer"></span>
+  <div class="controls">
+    <label class="ctl">dpmm
+      <select id="dpmm">
+        <option value="6">6 (152 dpi)</option>
+        <option value="8" selected>8 (203 dpi)</option>
+        <option value="12">12 (300 dpi)</option>
+        <option value="24">24 (600 dpi)</option>
+      </select>
+    </label>
+    <label class="ctl">w in <input type="number" id="w" value="4" min="0.25" max="16" step="0.25"></label>
+    <label class="ctl">h in <input type="number" id="h" value="6" min="0.25" max="16" step="0.25"></label>
+    <button id="download">Download PNG</button>
+  </div>
+</header>
+
+<main>
+  <section class="pane">
+    <h2>
+      ZPL
+      <span class="spacer"></span>
+      <span class="samples">
+        <button data-sample="asset">Asset tag</button>
+        <button data-sample="bin">Bin label</button>
+        <button data-sample="box">Boxes</button>
+      </span>
+    </h2>
+    <textarea id="zpl" spellcheck="false" aria-label="ZPL source"></textarea>
+  </section>
+
+  <section class="pane">
+    <h2>Preview <span class="spacer"></span><span id="dims" class="sub"></span></h2>
+    <div class="preview"><img id="out" alt="Rendered label preview"></div>
+    <div class="status" id="status">Ready.</div>
+  </section>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  var SAMPLES = {
+    asset: [
+      '^XA',
+      '^PW812',
+      '^FO40,30^GB732,200,4^FS',
+      '^FO70,70^A0N,48,48^FDINVENTORY^FS',
+      '^FO70,140^A0N,28,28^FDShelf B / Bin 14^FS',
+      '^BY3,3,120',
+      '^FO70,270^BCN,120,Y,N,N^FDASSET-0001^FS',
+      '^FO70,450^B3N,N,90,Y,N^FDTOOLBOX^FS',
+      '^XZ'
+    ].join('\n'),
+    bin: [
+      '^XA',
+      '^CF0,60',
+      '^FO40,40^FDBin 14^FS',
+      '^FO40,120^A0N,30,30^FDWorkshop / North wall^FS',
+      '^BY4,3,160',
+      '^FO40,200^BCN,160,Y,N,N^FDBIN-014^FS',
+      '^XZ'
+    ].join('\n'),
+    box: [
+      '^XA',
+      '^FO30,30^GB750,180,6^FS',
+      '^FO60,70^A0N,40,40^FDFilled box below^FS',
+      '^FO30,240^GB300,120,120^FS',
+      '^FO30,400^GB750,3,3^FS',
+      '^FO30,430^A0N,28,28^FDA 3-dot rule sits above this line^FS',
+      '^XZ'
+    ].join('\n')
+  };
+
+  var zpl = document.getElementById('zpl');
+  var out = document.getElementById('out');
+  var status = document.getElementById('status');
+  var dims = document.getElementById('dims');
+  var dpmm = document.getElementById('dpmm');
+  var wIn = document.getElementById('w');
+  var hIn = document.getElementById('h');
+
+  var lastUrl = null;
+  var timer = null;
+  var inflight = null;
+
+  function setStatus(text, kind) {
+    status.textContent = text;
+    status.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  function render() {
+    var body = zpl.value;
+    if (!body.trim()) {
+      setStatus('Nothing to render.');
+      return;
+    }
+
+    // Supersede an in-flight request rather than racing it: keystrokes arrive
+    // faster than renders complete, and a stale response must never win.
+    if (inflight) { inflight.abort(); }
+    var ac = new AbortController();
+    inflight = ac;
+
+    var qs = '?dpmm=' + encodeURIComponent(dpmm.value)
+           + '&w=' + encodeURIComponent(wIn.value)
+           + '&h=' + encodeURIComponent(hIn.value);
+
+    setStatus('Rendering…');
+    fetch('/api/zpl/render' + qs, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: body,
+      signal: ac.signal
+    }).then(function (r) {
+      var warn = r.headers.get('X-Zpl-Warnings');
+      var size = r.headers.get('X-Label-Dots');
+      if (!r.ok) {
+        return r.json().then(function (j) { throw new Error(j.error || ('HTTP ' + r.status)); });
+      }
+      return r.blob().then(function (b) { return { blob: b, warn: warn, size: size }; });
+    }).then(function (res) {
+      if (lastUrl) { URL.revokeObjectURL(lastUrl); }
+      lastUrl = URL.createObjectURL(res.blob);
+      out.src = lastUrl;
+      dims.textContent = res.size ? res.size + ' dots' : '';
+      if (res.warn) {
+        setStatus('Rendered. Commands not supported by the preview: ' + res.warn, 'warn');
+      } else {
+        setStatus('Rendered ' + (res.blob.size / 1024).toFixed(1) + ' KB.');
+      }
+    }).catch(function (e) {
+      if (e.name === 'AbortError') { return; }
+      setStatus(e.message, 'err');
+    });
+  }
+
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(render, 220);
+  }
+
+  zpl.addEventListener('input', schedule);
+  [dpmm, wIn, hIn].forEach(function (el) { el.addEventListener('change', render); });
+
+  document.querySelectorAll('[data-sample]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      zpl.value = SAMPLES[b.getAttribute('data-sample')];
+      try { localStorage.setItem('zplstudio.draft', zpl.value); } catch (e) {}
+      render();
+    });
+  });
+
+  document.getElementById('download').addEventListener('click', function () {
+    if (!lastUrl) { return; }
+    var a = document.createElement('a');
+    a.href = lastUrl;
+    a.download = 'label.png';
+    a.click();
+  });
+
+  // Keep the draft across reloads. Per-browser convenience only - it never
+  // leaves this machine and the tool works fine when storage is unavailable.
+  zpl.addEventListener('input', function () {
+    try { localStorage.setItem('zplstudio.draft', zpl.value); } catch (e) {}
+  });
+
+  var draft = null;
+  try { draft = localStorage.getItem('zplstudio.draft'); } catch (e) {}
+  zpl.value = draft || SAMPLES.asset;
+  render();
+})();
+</script>
+</body>
+</html>
